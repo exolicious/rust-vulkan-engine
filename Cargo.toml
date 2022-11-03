@@ -1,0 +1,17 @@
+[package]
+name = "rust-vulkan-engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vulkano = "0.31.0"
+vulkano-shaders = "0.31.0"
+bytemuck = "1.12.1"
+image = "0.24"
+vulkano-win = "0.31.0"
+winit = "0.27.3"
+
+[profile.dev]
+opt-level = 1
