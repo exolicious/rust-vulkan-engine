@@ -9,12 +9,15 @@ use crate::rendering::renderer::Renderer;
 use crate::rendering::render_manager::RenderManager;
 use crate::rendering::shaders::Shaders;
 
-use crate::rendering::primitives::Triangle;
+use crate::rendering::primitives::{Triangle, Cube, Mesh};
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
     
     let mut render_manager = RenderManager::new();
+
+    let mut cube = Cube::new([0.5,0.5,0.5], [0.,0.,0.]);
+    cube.generate_mesh();
 
     let vertex1 = Vertex {
         position: [-0.9, -0.9, 0.0],
@@ -38,7 +41,7 @@ fn main() {
             ..Default::default()
         },
         false,
-        triangle.vertices.into_iter(),
+        cube.unwrap_vertices().into_iter(),
     )
     .unwrap();
 
