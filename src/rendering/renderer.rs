@@ -9,13 +9,14 @@ use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCrea
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
-use crate::Vertex;
+use crate::{initialize::vulkan_instancing::get_vulkan_instance};
+use crate::rendering::primitives::Vertex;
 
 
-pub struct Renderer {
+pub struct Renderer<T> {
     vulkan_instance: Arc<Instance>,
     viewport: Viewport,
-    surface: Arc<Surface<Window>>,
+    surface: Arc<T>,
     pub device: Arc<Device>,
     physical_device: Arc<PhysicalDevice>,
     queue_family_index: u32,
@@ -32,8 +33,9 @@ pub struct Renderer {
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
 }
 
-impl Renderer {
-    pub fn new(vulkan_instance: Arc<Instance>, event_loop: &EventLoop<()>) -> Self {
+impl Renderer<Surface<Window>> {
+    pub fn new(event_loop: &EventLoop<()>) -> Self {
+        let vulkan_instance = get_vulkan_instance();
         let surface = WindowBuilder::new().build_vk_surface(&event_loop, vulkan_instance.clone()).unwrap();
         let viewport= Viewport {
             origin: [0.0, 0.0],
