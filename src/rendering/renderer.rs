@@ -1,26 +1,28 @@
 use std::{sync::Arc};
-use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, PresentInfo, SwapchainAcquireFuture, PresentFuture}, 
+use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError}, 
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
     image::{SwapchainImage, ImageUsage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, 
-    pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline}, 
+    pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline, Pipeline}, 
     command_buffer::{PrimaryAutoCommandBuffer, pool::standard::StandardCommandPoolAlloc, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, 
-    SubpassContents, CommandBufferExecFuture}, shader::ShaderModule, buffer::{CpuAccessibleBuffer, TypedBufferAccess}, 
-    sync::{GpuFuture, FlushError, FenceSignalFuture, JoinFuture }};
+    SubpassContents}, shader::ShaderModule, buffer::{CpuAccessibleBuffer, TypedBufferAccess}, descriptor_set::WriteDescriptorSet};
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
+use vulkano::descriptor_set::PersistentDescriptorSet;
+use vulkano::pipeline::PipelineBindPoint;
 
-use crate::{initialize::vulkan_instancing::get_vulkan_instance};
+
+use crate::{initialize::vulkan_instancing::get_vulkan_instance, engine::engine::Engine};
 use crate::rendering::primitives::Vertex;
 
 
 pub struct Renderer<T> {
-    vulkan_instance: Arc<Instance>,
+    //vulkan_instance: Arc<Instance>,
     viewport: Viewport,
     surface: Arc<T>,
     pub device: Arc<Device>,
-    physical_device: Arc<PhysicalDevice>,
+    /* physical_device: Arc<PhysicalDevice>,
     queue_family_index: u32,
-    queues: Box<(dyn ExactSizeIterator<Item = Arc<Queue>> + 'static)>,
+    queues: Box<(dyn ExactSizeIterator<Item = Arc<Queue>> + 'static)>, */
     pub active_queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain<Window>>,
     pub swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
@@ -31,6 +33,7 @@ pub struct Renderer<T> {
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
+    uniform_buffer: Option<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
 }
 
 impl Renderer<Surface<Window>> {
@@ -61,13 +64,13 @@ impl Renderer<Surface<Window>> {
         let framebuffers = Self::create_framebuffers(swapchain_images.clone(), render_pass.clone());
         
         Self {
-            vulkan_instance,
+            //vulkan_instance,
             viewport,
             surface,
-            physical_device,
-            queue_family_index,
+            //physical_device,
+            //queue_family_index,
             device,
-            queues: Box::new(queues),
+            //queues: Box::new(queues),
             active_queue,
             swapchain,
             swapchain_images,
@@ -77,7 +80,8 @@ impl Renderer<Surface<Window>> {
             command_buffers: None,
             vertex_shader: None,
             fragment_shader: None,
-            vertex_buffer: None
+            vertex_buffer: None,
+            uniform_buffer: None
         }
     }
 
@@ -105,7 +109,6 @@ impl Renderer<Surface<Window>> {
             })
         .expect("no device available")
     }
-
 
     //initializes the logical device and gets all the available queues, then gets the first one and sets it as the active queue
     fn init_device_and_queues(device_extensions: DeviceExtensions, queue_family_index: u32, physical_device: Arc<PhysicalDevice>) -> (Arc<vulkano::device::Device>, impl ExactSizeIterator + Iterator<Item = Arc<Queue>>, Arc<Queue>) {
@@ -230,59 +233,79 @@ impl Renderer<Surface<Window>> {
         self.vertex_buffer = Some(vertex_buffer);
     }
 
+    pub fn init_uniform_buffers(&mut self, uniform_buffer: Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>) -> () {
+        self.uniform_buffer = Some(uniform_buffer);
+    }
+
+    pub fn get_uniform_buffer_descriptor_set(&mut self) ->  Arc<PersistentDescriptorSet> {
+        if self.pipeline.is_none() { self.create_pipeline() }
+        let binding = self.pipeline.as_ref().unwrap().clone();
+        let layout = binding.layout().set_layouts().get(0).unwrap();
+        PersistentDescriptorSet::new(
+            layout.clone(),
+            [WriteDescriptorSet::buffer(0, self.uniform_buffer.as_ref().unwrap().clone())], // 0 is the binding
+        )
+        .unwrap()
+    }
+
     pub fn create_command_buffers(&mut self) -> () {
-        let command_buffers : Vec<Arc<PrimaryAutoCommandBuffer<StandardCommandPoolAlloc>>> = self.framebuffers
-            .clone()
-            .iter()
-            .map(|framebuffer| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    self.device.clone(),
-                    self.active_queue.queue_family_index(),
-                    CommandBufferUsage::MultipleSubmit,
+        if self.pipeline.is_none() { self.create_pipeline() }
+        if !self.command_buffers.is_none() { return }
+        let command_buffers = self.framebuffers
+        .clone()
+        .iter()
+        .map(|framebuffer| {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                self.device.clone(),
+                self.active_queue.queue_family_index(),
+                CommandBufferUsage::MultipleSubmit,
+            )
+            .unwrap();
+
+            builder
+                .begin_render_pass(
+                    RenderPassBeginInfo {
+                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                    },
+                    SubpassContents::Inline,
                 )
+                .unwrap()
+                .bind_pipeline_graphics(self.pipeline.as_ref().unwrap().clone())
+                .bind_vertex_buffers(0, self.vertex_buffer.as_ref().unwrap().clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    self.pipeline.as_ref().unwrap().layout().clone(),
+                    0,
+                    self.get_uniform_buffer_descriptor_set(),
+                )
+                .draw(self.vertex_buffer.as_ref().unwrap().clone().len() as u32, 1, 0, 0)
+                .unwrap()
+                .end_render_pass()
                 .unwrap();
-    
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
-                            ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                        },
-                        SubpassContents::Inline,
-                    )
-                    .unwrap()
-                    .bind_pipeline_graphics(self.pipeline.as_ref().unwrap().clone())
-                    .bind_vertex_buffers(0, self.vertex_buffer.as_ref().unwrap().clone())
-                    .draw(self.vertex_buffer.as_ref().unwrap().clone().len() as u32, 1, 0, 0)
-                    .unwrap()
-                    .end_render_pass()
-                    .unwrap();
-    
-                Arc::new(builder.build().unwrap())
-            })
-            .collect();
-        
-            self.command_buffers = Some(command_buffers);
-        
+            Arc::new(builder.build().unwrap())
+        })
+        .collect();
+        self.command_buffers = Some(command_buffers);
     }
 
     pub fn recreate_swapchain_and_framebuffers(&mut self) -> () {
         let new_dimensions = self.surface.window().inner_size();
-            let (new_swapchain, new_swapchain_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                image_extent: new_dimensions.into(),
-                ..self.swapchain.create_info()
-            }) {
-                Ok(r) => r,
-                Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
-            };
-            self.swapchain = new_swapchain;
-            self.swapchain_images = new_swapchain_images;
-            
-            //dependent on self.swapchain
-            self.recreate_render_pass();
-            //dependent on self.swapchain.images
-            self.recreate_framebuffers();
+        let (new_swapchain, new_swapchain_images) = match self.swapchain.recreate(SwapchainCreateInfo {
+            image_extent: new_dimensions.into(),
+            ..self.swapchain.create_info()
+        }) {
+            Ok(r) => r,
+            Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+            Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+        };
+        self.swapchain = new_swapchain;
+        self.swapchain_images = new_swapchain_images;
+        
+        //dependent on self.swapchain
+        self.recreate_render_pass();
+        //dependent on self.swapchain.images
+        self.recreate_framebuffers();
     }
 
     fn recreate_render_pass(&mut self) -> () {
@@ -300,7 +323,7 @@ impl Renderer<Surface<Window>> {
         self.create_command_buffers();
     }
 
-    pub fn get_future(&self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
+    /* pub fn get_future(&self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
         previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.command_buffers.as_ref().unwrap()[image_i].clone())
@@ -313,5 +336,9 @@ impl Renderer<Surface<Window>> {
                 },
             )
             .then_signal_fence_and_flush()
+    } */
+
+    pub fn start_renderer(&mut self, mut event_loop: EventLoop<()>, engine: &Engine) -> () {
+        
     }
 }

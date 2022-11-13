@@ -1,8 +1,12 @@
 
 use bytemuck::{Zeroable, Pod};
+use cgmath::Vector3;
+
+use crate::{physics::physics_traits::Transform, engine::{general_traits::Update}};
+
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Zeroable, Pod, Debug)]
+#[derive(Default, Copy, Clone, Debug, Zeroable, Pod)]
 pub struct Vertex {
     pub position: [f32; 3],
     //pub color: [f32; 4]
@@ -33,25 +37,44 @@ trait BasicObject{}
 impl BasicObject for Cube {}
 
 pub struct Cube {
-    pub bounds: [f32; 3], 
-    pub position: [f32; 3],
-    mesh: Option<Vec<Triangle>>
+    pub bounds: Vector3<f32>, 
+    mesh: Vec<Triangle>,
+    transform: Transform,
+    //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
 
 impl Cube {
-    pub fn new (bounds: [f32; 3], position: [f32; 3]) -> Self {
+    pub fn new() -> Self {
         Self {
-            bounds,
-            position,
-            mesh: None
+            ..Default::default()
+        }
+    }
+}
+
+impl Update for Cube {
+    fn update(&mut self) -> () {
+        return;
+    }
+}
+
+impl Default for Cube {
+    fn default() -> Self {
+        let bounds = Vector3 { x: 0.25, y: 0.125, z: 0.25 };
+        let mesh = Cube::generate_mesh(bounds);
+        
+        Self {
+            bounds : bounds,
+            mesh: mesh,
+            transform: Transform { ..Default::default() },
+            //vertex_buffer
         }
     }
 }
 
 impl Mesh for Cube {
-    fn generate_mesh(& mut self) -> () {
+    fn generate_mesh(bounds: Vector3<f32>) -> Vec<Triangle> {
         let mut resulting_mesh: Vec<Triangle> = Vec::new();
-        let (x_bounds, y_bounds, z_bounds) = (self.bounds[0], self.bounds[1], self.bounds[2]);
+        let (x_bounds, y_bounds, z_bounds) = (bounds[0], bounds[1], bounds[2]);
 
         let temp = [[x_bounds/2., y_bounds/2., z_bounds/2.]; 8];
         let mut temp_vertices: Vec<Vertex> = Vec::new();
@@ -60,15 +83,14 @@ impl Mesh for Cube {
         //right_top_back, right_bottom_back, left_top_back, left_bottom_front, left_bottom_back
         for i in 0..temp.len() {
             let mut temp_sub = temp[i];
-            println!("Iteration number {}", i);
-            if(i > 0 && i < 4) {
+            if i > 0 && i < 4 {
                 temp_sub[i-1] = temp_sub[i-1] * -1.
             }
-            else if(i >= 4 && i <= 7) {
+            else if i >= 4 && i <= 7 {
                 for j in 0..temp_sub.len() {
                     temp_sub[j] = temp_sub[j] * -1.;
                 }
-                if (i == 7) {
+                if i == 7 {
                     temp_vertices.push(Vertex{position: temp_sub});
                     break;
                 }
@@ -76,7 +98,6 @@ impl Mesh for Cube {
             }
             temp_vertices.push(Vertex{position: temp_sub});
         }
-        print!("temp vertices: {:?}", temp_vertices);
 
         let triangle_1 = Triangle{vertices: [temp_vertices[0], temp_vertices[3], temp_vertices[5]]};
         let triangle_2 = Triangle{vertices: [temp_vertices[5], temp_vertices[1], temp_vertices[0]]};
@@ -104,27 +125,23 @@ impl Mesh for Cube {
         resulting_mesh.push(triangle_11);
         resulting_mesh.push(triangle_12);
 
-        self.mesh = Some(resulting_mesh);
+        resulting_mesh
 
     }
 
     fn unwrap_vertices(&self) -> Vec<Vertex> {
         let mut result = Vec::new();
-        for triangle in self.mesh.as_ref().unwrap() {
+        for triangle in &self.mesh {
             for i in 0..triangle.vertices.len() {
                 result.push(triangle.vertices[i])
             }
         }
         result
     }
-
-    fn mesh_helper(&self) {}
-    
-
 }
 
 pub trait Mesh {
-    fn generate_mesh(& mut self) -> ();
+    fn generate_mesh(bounds: Vector3<f32>) -> Vec<Triangle>;
     fn unwrap_vertices(&self) -> Vec<Vertex>;
     fn mesh_helper(&self) {}
 }

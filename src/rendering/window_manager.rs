@@ -1,37 +1,37 @@
 use std::{sync::Arc};
 
-use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError, JoinFuture}, swapchain::{self, AcquireError, PresentFuture, SwapchainAcquireFuture, PresentInfo, Surface}, command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer}, instance::Instance};
-use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::Window};
+use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError, PresentInfo}};
+use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
-use crate::{Renderer};
+use crate::engine::engine::Engine;
 
-pub struct RenderManager<T> {
-    pub renderer: Renderer<T>,
-    event_loop: EventLoop<()>,
+pub struct WindowManager {
+    pub engine: Engine,
+    pub event_loop: EventLoop<()>,
 /*     previous_fence_i: usize,
     fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>>>>,
     window_resized: bool,
     recreate_swapchain: bool, */
 }
 
-impl RenderManager<Surface<Window>> {
-    pub fn new() -> RenderManager<Surface<Window>>{
+impl WindowManager {
+    pub fn new() -> WindowManager {
         let event_loop = EventLoop::new();
-        let mut renderer = Renderer::new(&event_loop);
+        let engine = Engine::new(&event_loop);
         Self {
-            renderer,
-            event_loop
+            engine,
+            event_loop,
         }
     }
 
-    pub fn start_renderer(mut self) -> () {
+    pub fn start_engine(mut self) -> () {
         let mut window_resized = false;
         let mut recreate_swapchain = false;
 
-        let frames_in_flight = self.renderer.swapchain_images.len();
+        let frames_in_flight = self.engine.renderer.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
-    
+
         self.event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -49,16 +49,16 @@ impl RenderManager<Surface<Window>> {
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
 
-                    self.renderer.recreate_swapchain_and_framebuffers();
+                    self.engine.renderer.recreate_swapchain_and_framebuffers();
 
                     if window_resized {
                         window_resized = false;
-                        self.renderer.recreate_pipeline_and_commandbuffers();
+                        self.engine.renderer.recreate_pipeline_and_commandbuffers();
                     }
                 }
 
                 let (image_i, suboptimal, acquire_future) =
-                    match swapchain::acquire_next_image(self.renderer.swapchain.clone(), None) {
+                    match swapchain::acquire_next_image(self.engine.renderer.swapchain.clone(), None) {
                         Ok(r) => r,
                         Err(AcquireError::OutOfDate) => {
                             recreate_swapchain = true;
@@ -79,7 +79,7 @@ impl RenderManager<Surface<Window>> {
                 let previous_future = match fences[previous_fence_i].clone() {
                     // Create a NowFuture
                     None => {
-                        let mut now = sync::now(self.renderer.device.clone());
+                        let mut now = sync::now(self.engine.renderer.device.clone());
                         now.cleanup_finished();
 
                         now.boxed()
@@ -88,15 +88,15 @@ impl RenderManager<Surface<Window>> {
                     Some(fence) => fence.boxed(),
                 };
 
-                let future = previous_future
+                let future =  previous_future
                     .join(acquire_future)
-                    .then_execute(self.renderer.active_queue.clone(), self.renderer.command_buffers.as_ref().unwrap()[image_i].clone())
+                    .then_execute(self.engine.renderer.active_queue.clone(), self.engine.renderer.command_buffers.as_ref().unwrap()[image_i].clone())
                     .unwrap()
                     .then_swapchain_present(
-                        self.renderer.active_queue.clone(),
+                        self.engine.renderer.active_queue.clone(),
                         PresentInfo {
                             index: image_i,
-                            ..PresentInfo::swapchain(self.renderer.swapchain.clone())
+                            ..PresentInfo::swapchain(self.engine.renderer.swapchain.clone())
                         },
                     )
                     .then_signal_fence_and_flush();
@@ -115,7 +115,7 @@ impl RenderManager<Surface<Window>> {
 
                 previous_fence_i = image_i;
             }
-            _ => (),
-        }); 
+            _ => self.engine.update(),
+        });
     }
 }

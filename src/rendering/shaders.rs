@@ -7,9 +7,14 @@ mod vertex_shader {
         ty: "vertex",
         src: "
             #version 450
+            layout(binding = 0) uniform UniformBufferObject {
+                mat4 u_view_projection_matrix;
+            } ubo;
+
             layout(location = 0) in vec3 position;
+            
             void main() {
-            gl_Position = vec4(position, 1.0);
+                gl_Position = ubo.u_view_projection_matrix * vec4(position, 1.0);
             }",
     }
 }
@@ -21,7 +26,7 @@ mod fragment_shader {
             #version 450
             layout(location = 0) out vec4 f_color;
             void main() {
-            f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                f_color = vec4(1.0, 0.0, 0.0, 1.0);
             }"
     }
 }
