@@ -58,7 +58,7 @@ impl Camera {
 
 impl Update for Camera {
     fn update(& mut self) -> () {
-        //self.move_y(0.000005);
+        self.move_y(0.000005);
         self.flush_uniform_buffer();
     }
 }

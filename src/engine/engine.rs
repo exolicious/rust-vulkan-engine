@@ -1,13 +1,11 @@
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage};
-use vulkano::swapchain::{Surface, self, AcquireError};
-use winit::event_loop::{EventLoop, ControlFlow};
+use vulkano::swapchain::{Surface};
+use winit::event_loop::{EventLoop};
 use winit::window::Window;
 
 use crate::camera::camera::Camera;
 use crate::engine::general_traits::UniformBufferOwner;
-use crate::rendering::primitives::{Cube, Mesh};
-use crate::rendering::renderer::Renderer;
-use crate::rendering::shaders::Shaders;
+use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders, rendering_traits::Mesh};
 
 use super::general_traits::Update;
 
@@ -36,10 +34,7 @@ impl Engine {
 
         
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
-        renderer.init_shaders(shaders.vertex_shader.clone(), shaders.fragment_shader.clone());
-        renderer.init_uniform_buffers(camera.get_uniform_buffer().clone());
-        renderer.init_vertex_buffers(vertex_buffer.clone());
-        renderer.create_command_buffers();
+        renderer.build(shaders.vertex_shader, shaders.fragment_shader, camera.get_uniform_buffer(), vertex_buffer);
 
         entities.push(cube);
         entities.push(camera);

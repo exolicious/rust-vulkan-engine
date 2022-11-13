@@ -1,8 +1,8 @@
-
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 
 use crate::{physics::physics_traits::Transform, engine::{general_traits::Update}};
+use super::rendering_traits::Mesh;
 
 
 #[repr(C)]
@@ -138,10 +138,4 @@ impl Mesh for Cube {
         }
         result
     }
-}
-
-pub trait Mesh {
-    fn generate_mesh(bounds: Vector3<f32>) -> Vec<Triangle>;
-    fn unwrap_vertices(&self) -> Vec<Vertex>;
-    fn mesh_helper(&self) {}
 }

@@ -53,8 +53,9 @@ impl WindowManager {
 
                     if window_resized {
                         window_resized = false;
-                        self.engine.renderer.recreate_pipeline_and_commandbuffers();
+                        self.engine.renderer.recreate_pipeline();
                     }
+                    self.engine.renderer.init_frames();
                 }
 
                 let (image_i, suboptimal, acquire_future) =
@@ -88,18 +89,7 @@ impl WindowManager {
                     Some(fence) => fence.boxed(),
                 };
 
-                let future =  previous_future
-                    .join(acquire_future)
-                    .then_execute(self.engine.renderer.active_queue.clone(), self.engine.renderer.command_buffers.as_ref().unwrap()[image_i].clone())
-                    .unwrap()
-                    .then_swapchain_present(
-                        self.engine.renderer.active_queue.clone(),
-                        PresentInfo {
-                            index: image_i,
-                            ..PresentInfo::swapchain(self.engine.renderer.swapchain.clone())
-                        },
-                    )
-                    .then_signal_fence_and_flush();
+                let future =  self.engine.renderer.get_future(previous_future, acquire_future, image_i);
 
                 fences[image_i] = match future {
                     Ok(value) => Some(Arc::new(value)),
