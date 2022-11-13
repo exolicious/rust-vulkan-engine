@@ -17,7 +17,7 @@ impl Transform {
 impl Default for Transform {
     fn default() -> Self {
         Self {
-            position: Vector3 {x: 0., y: 0., z: 0.},
+            position: Vector3 {x: 0., y: 0., z: 2. },
             rotation: Quaternion {v: Vector3 {x: 0., y: 0., z: 1.}, s: 0.},
             scale: Vector3 {x: 1., y: 1., z: 1.},
         }

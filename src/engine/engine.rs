@@ -12,6 +12,7 @@ use super::general_traits::Update;
 pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
     pub entities: Vec<Box<dyn Update>>,
+    pub latest_swapchain_image_index: usize,
 }
 
 impl Engine {
@@ -34,19 +35,20 @@ impl Engine {
 
         
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
-        renderer.build(shaders.vertex_shader, shaders.fragment_shader, camera.get_uniform_buffer(), vertex_buffer);
+        renderer.build(shaders.vertex_shader, shaders.fragment_shader, camera.get_uniform_buffers(), vertex_buffer);
 
         entities.push(cube);
         entities.push(camera);
         Self {
             renderer,
-            entities
+            entities,
+            latest_swapchain_image_index: 0,
         }
     }
 
     pub fn update(& mut self) {
         for entity in & mut self.entities {
-            entity.update();
+            entity.update(self.latest_swapchain_image_index);
         }
     }
 }

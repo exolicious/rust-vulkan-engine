@@ -58,7 +58,7 @@ impl WindowManager {
                     self.engine.renderer.init_frames();
                 }
 
-                let (image_i, suboptimal, acquire_future) =
+                let (swapchain_image_index, suboptimal, acquire_future) =
                     match swapchain::acquire_next_image(self.engine.renderer.swapchain.clone(), None) {
                         Ok(r) => r,
                         Err(AcquireError::OutOfDate) => {
@@ -73,8 +73,10 @@ impl WindowManager {
                 }
 
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
-                if let Some(image_fence) = &fences[image_i] {
+                if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
+                    self.engine.latest_swapchain_image_index = swapchain_image_index;
+                    self.engine.update();
                 }
 
                 let previous_future = match fences[previous_fence_i].clone() {
@@ -89,10 +91,12 @@ impl WindowManager {
                     Some(fence) => fence.boxed(),
                 };
 
-                let future =  self.engine.renderer.get_future(previous_future, acquire_future, image_i);
+                let future =  self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
 
-                fences[image_i] = match future {
-                    Ok(value) => Some(Arc::new(value)),
+                fences[swapchain_image_index] = match future {
+                    Ok(value) => {
+                        Some(Arc::new(value))
+                    }
                     Err(FlushError::OutOfDate) => {
                         recreate_swapchain = true;
                         None
@@ -102,10 +106,9 @@ impl WindowManager {
                         None
                     }
                 };
-
-                previous_fence_i = image_i;
+                previous_fence_i = swapchain_image_index;
             }
-            _ => self.engine.update(),
+            _ => (),
         });
     }
 }

@@ -6,8 +6,8 @@ use winit::window::Window;
 use super::primitives::Vertex;
 
 pub struct Frame {
-    swapchain_image: Arc<SwapchainImage<Window>>,
-    framebuffer: Arc<Framebuffer>,
+/*     swapchain_image: Arc<SwapchainImage<Window>>,
+    framebuffer: Arc<Framebuffer>, */
     pub command_buffer: Arc<PrimaryAutoCommandBuffer>
 }
 
@@ -16,11 +16,10 @@ impl Frame {
         let framebuffer = Self::create_framebuffer(swapchain_image.clone(), render_pass);
         let command_buffer = Self::create_command_buffer(framebuffer.clone(), device, active_queue_family_index, pipeline, vertex_buffer, uniform_buffer_descriptor_set);
         Self {
-            swapchain_image,
-            framebuffer,
+           /*  swapchain_image,
+            framebuffer, */
             command_buffer
         }
-        
     }
 
     pub fn create_framebuffer(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>) -> Arc<Framebuffer> {

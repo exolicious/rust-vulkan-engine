@@ -52,7 +52,7 @@ impl Cube {
 }
 
 impl Update for Cube {
-    fn update(&mut self) -> () {
+    fn update(&mut self, swapchain_image_index: usize) -> () {
         return;
     }
 }
