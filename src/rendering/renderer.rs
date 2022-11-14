@@ -45,9 +45,7 @@ impl Renderer<Surface<Window>> {
             dimensions: surface.window().inner_size().into(),
             depth_range: 0.0..1.0,
         };
-
         Self::init(vulkan_instance, viewport, surface)
-
     }
 
     pub fn init(vulkan_instance: Arc<Instance>, viewport: Viewport, surface : Arc<Surface<Window>>) -> Self {
@@ -167,7 +165,6 @@ impl Renderer<Surface<Window>> {
         )
         .unwrap();
         (swapchain, swapchain_images)
-
     }
 
     fn create_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Arc<RenderPass> {
@@ -294,5 +291,4 @@ impl Renderer<Surface<Window>> {
             )
             .then_signal_fence_and_flush()
     }
-
 }

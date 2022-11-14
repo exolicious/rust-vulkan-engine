@@ -1,11 +1,12 @@
-use std::sync::Arc;
+use std::{sync::Arc, ops::{DerefMut, Deref}};
 
-use crate::{physics::physics_traits::{Transform, Movable}, engine::general_traits::{Update, UniformBufferOwner}, rendering::renderer::Renderer};
+use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner}, rendering::renderer::Renderer};
 
 use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, swapchain::Surface};
 use winit::window::Window;
 
+#[derive(Debug, Clone)]
 pub struct Camera {
     transform: Transform,
     projection_matrix: Matrix4<f32>,
@@ -31,11 +32,19 @@ impl Camera {
             .unwrap();
             uniform_buffers.push(uniform_buffer);
         }
+
+        let transform = Transform { ..Default::default() };
+
+        let translation_matrix = Matrix4::from_translation(transform.position);
+        let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg {0: transform.rotation.s});
+        let projection_matrix = perspective(Deg{0: 55.}, 16./9. , 1., 40.);
+        let view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
+        let projection_view_matrix = projection_matrix * view_matrix;
        
         Self {
-            transform: Transform { ..Default::default() },
-            projection_matrix: perspective(Deg{0: 45.}, 16./9. , 1., 40.),
-            view_matrix: Matrix4::identity(),
+            transform: transform,
+            projection_matrix: projection_matrix,
+            view_matrix: view_matrix,
             projection_view_matrix: projection_view_matrix,
             uniform_buffers
         }
@@ -54,7 +63,7 @@ impl Camera {
         println!("{:?}", self.projection_view_matrix);
     }
 
-    pub fn flush_uniform_buffer(& mut self, swapchain_image_index: usize) {
+    pub fn flush_uniform_buffer(& self, swapchain_image_index: usize) {
         match self.uniform_buffers[swapchain_image_index].write() {
             Err(_) => println!("Error"),
             Ok(mut write_lock) => { 
@@ -65,15 +74,18 @@ impl Camera {
     }
 }
 
-impl Update for Camera {
-    fn update(& mut self, swapchain_image_index: usize) -> () {
-        self.move_y(0.001);
+impl UpdateGraphics for Camera {
+    fn update_graphics(& self, swapchain_image_index: usize) -> () {
         self.flush_uniform_buffer(swapchain_image_index);
     }
 }
 
 impl Movable for Camera {
-    fn on_move(& mut self) {
+    fn update_position(&mut self) -> () {
+        self.move_z(0.05);
+    }
+
+    fn on_move(& mut self) -> () {
         self.recalculate_projection_view_matrix();
     }
 

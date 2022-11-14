@@ -1,5 +1,6 @@
 use cgmath::{Vector3, Quaternion};
 
+#[derive(Debug, Clone)]
 pub struct Transform {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
@@ -25,6 +26,7 @@ impl Default for Transform {
 }
 
 pub trait Movable {
+    fn update_position(&mut self) -> ();
     fn on_move(& mut self) -> ();
     fn move_xyz(& mut self, amount: Vector3<f32>) -> ();
     fn move_x(& mut self, amount: f32) -> ();

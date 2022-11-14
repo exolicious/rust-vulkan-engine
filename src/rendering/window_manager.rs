@@ -15,7 +15,7 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    pub fn new() -> WindowManager {
+    pub fn new() -> Self {
         let event_loop = EventLoop::new();
         let engine = Engine::new(&event_loop);
         Self {
@@ -45,12 +45,31 @@ impl WindowManager {
             } => {
                 window_resized = true;
             }
+            Event::WindowEvent {
+                event: WindowEvent::KeyboardInput { device_id, input, is_synthetic },
+                ..
+            } => {
+                if input.scancode == 17 {
+                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
+                    self.engine.update()
+                }
+                if input.scancode == 17 {
+                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
+                    self.engine.update()
+                }
+                if input.scancode == 17 {
+                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
+                    self.engine.update()
+                }
+                if input.scancode == 17 {
+                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
+                    self.engine.update()
+                }
+            }
             Event::MainEventsCleared => {
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
-
                     self.engine.renderer.recreate_swapchain_and_framebuffers();
-
                     if window_resized {
                         window_resized = false;
                         self.engine.renderer.recreate_pipeline();
@@ -76,7 +95,7 @@ impl WindowManager {
                 if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
                     self.engine.latest_swapchain_image_index = swapchain_image_index;
-                    self.engine.update();
+                    self.engine.update_graphics();
                 }
 
                 let previous_future = match fences[previous_fence_i].clone() {
@@ -84,7 +103,6 @@ impl WindowManager {
                     None => {
                         let mut now = sync::now(self.engine.renderer.device.clone());
                         now.cleanup_finished();
-
                         now.boxed()
                     }
                     // Use the existing FenceSignalFuture
@@ -106,6 +124,7 @@ impl WindowManager {
                         None
                     }
                 };
+                
                 previous_fence_i = swapchain_image_index;
             }
             _ => (),

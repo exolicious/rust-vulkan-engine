@@ -1,7 +1,7 @@
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 
-use crate::{physics::physics_traits::Transform, engine::{general_traits::Update}};
+use crate::{physics::physics_traits::Transform, rendering::{rendering_traits::UpdateGraphics}};
 use super::rendering_traits::Mesh;
 
 
@@ -51,8 +51,8 @@ impl Cube {
     }
 }
 
-impl Update for Cube {
-    fn update(&mut self, swapchain_image_index: usize) -> () {
+impl UpdateGraphics for Cube {
+    fn update_graphics(& self, swapchain_image_index: usize) -> () {
         return;
     }
 }
