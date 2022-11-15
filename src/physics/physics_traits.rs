@@ -27,9 +27,9 @@ impl Default for Transform {
 
 pub trait Movable {
     fn update_position(&mut self) -> ();
-    fn on_move(& mut self) -> ();
-    fn move_xyz(& mut self, amount: Vector3<f32>) -> ();
-    fn move_x(& mut self, amount: f32) -> ();
-    fn move_y(& mut self, amount: f32) -> ();
-    fn move_z(& mut self, amount: f32) -> ();
+    fn on_move(&mut self) -> ();
+    fn move_xyz(&mut self, amount: Vector3<f32>) -> ();
+    fn move_x(&mut self, amount: f32) -> ();
+    fn move_y(&mut self, amount: f32) -> ();
+    fn move_z(&mut self, amount: f32) -> ();
 }

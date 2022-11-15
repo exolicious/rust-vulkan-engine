@@ -1,7 +1,7 @@
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 
-use crate::{physics::physics_traits::Transform, rendering::{rendering_traits::UpdateGraphics}};
+use crate::{physics::physics_traits::{Transform, Movable}, rendering::{rendering_traits::UpdateGraphics}};
 use super::rendering_traits::Mesh;
 
 
@@ -44,9 +44,12 @@ pub struct Cube {
 }
 
 impl Cube {
-    pub fn new() -> Self {
+    pub fn new(bounds: Vector3<f32>, transform: Transform) -> Self {
+        let mesh = Cube::generate_mesh(bounds);
         Self {
-            ..Default::default()
+            bounds,
+            mesh,
+            transform
         }
     }
 }
@@ -65,9 +68,38 @@ impl Default for Cube {
         Self {
             bounds : bounds,
             mesh: mesh,
-            transform: Transform { ..Default::default() },
+            transform: Transform::default(),
             //vertex_buffer
         }
+    }
+}
+
+impl Movable for Cube {
+    fn update_position(&mut self) -> () {
+        self.move_x(0.3);
+    }
+
+    fn on_move(&mut self) -> () {
+        
+    }
+
+    fn move_xyz(&mut self, amount: Vector3<f32>) -> () {
+        self.move_x(amount.x);
+        self.move_y(amount.y);
+        self.move_z(amount.z);
+        self.on_move();
+    }
+    fn move_x(&mut self, amount: f32) -> () {
+        self.transform.position.x += amount;
+        self.on_move();
+    }
+    fn move_y(&mut self, amount: f32) -> () {
+        self.transform.position.y += amount;
+        self.on_move();
+    }
+    fn move_z(&mut self, amount: f32) -> () {
+        self.transform.position.z += amount;
+        self.on_move();
     }
 }
 

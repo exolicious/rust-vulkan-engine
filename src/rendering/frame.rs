@@ -1,66 +1,96 @@
 use std::sync::Arc;
 
-use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline}, buffer::{CpuAccessibleBuffer, TypedBufferAccess}, descriptor_set::PersistentDescriptorSet};
+use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline, graphics::vertex_input::VertexBuffersCollection}, buffer::{CpuAccessibleBuffer, TypedBufferAccess, BufferAccess}, descriptor_set::PersistentDescriptorSet};
 use winit::window::Window;
 
 use super::primitives::Vertex;
 
 pub struct Frame {
-/*     swapchain_image: Arc<SwapchainImage<Window>>,
-    framebuffer: Arc<Framebuffer>, */
-    pub command_buffer: Arc<PrimaryAutoCommandBuffer>
+    swapchain_image: Arc<SwapchainImage<Window>>,
+    render_pass: Arc<RenderPass>,
+    device: Arc<Device>, 
+    active_queue_family_index: u32, 
+    pipeline: Arc<GraphicsPipeline>, 
+    vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
+    uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>,
+    framebuffer: Option<Arc<Framebuffer>>,
+    pub command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>, device: Arc<Device>, active_queue_family_index: u32, pipeline: Arc<GraphicsPipeline>, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
-        let framebuffer = Self::create_framebuffer(swapchain_image.clone(), render_pass);
-        let command_buffer = Self::create_command_buffer(framebuffer.clone(), device, active_queue_family_index, pipeline, vertex_buffer, uniform_buffer_descriptor_set);
+    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>, device: Arc<Device>, active_queue_family_index: u32, pipeline: Arc<GraphicsPipeline>, 
+        vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
         Self {
-           /*  swapchain_image,
-            framebuffer, */
-            command_buffer
+            swapchain_image,
+            render_pass,
+            device,
+            active_queue_family_index,
+            pipeline,
+            vertex_buffers,
+            uniform_buffer_descriptor_set,
+            framebuffer: None,
+            command_buffer: None,
         }
     }
 
-    pub fn create_framebuffer(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>) -> Arc<Framebuffer> {
-        let view = ImageView::new_default(swapchain_image).unwrap();
-        Framebuffer::new(render_pass.clone(),
-                        FramebufferCreateInfo {
-                            attachments: vec![view],
-                            ..Default::default()
-                        })
-                        .unwrap()
+    pub fn init(&mut self) {
+        self.init_framebuffer();
+        self.init_command_buffer();
     }
 
-    pub fn create_command_buffer(framebuffer: Arc<Framebuffer>, device: Arc<Device>, active_queue_family_index: u32, pipeline: Arc<GraphicsPipeline>, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Arc<PrimaryAutoCommandBuffer> {
-            let mut builder = AutoCommandBufferBuilder::primary(
-                device,
-                active_queue_family_index,
-                CommandBufferUsage::MultipleSubmit,
-            )
+    fn init_framebuffer(&mut self) -> () {
+        let view = ImageView::new_default(self.swapchain_image.clone()).unwrap();
+        let framebuffer = Framebuffer::new(
+            self.render_pass.clone(),
+            FramebufferCreateInfo {
+                attachments: vec![view],
+                ..Default::default()
+            })
             .unwrap();
+        self.framebuffer = Some(framebuffer);
+    }
 
-            builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer)
-                    },
-                    SubpassContents::Inline,
-                )
-                .unwrap()
-                .bind_pipeline_graphics(pipeline.clone())
-                .bind_vertex_buffers(0, vertex_buffer.clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    0,
-                    uniform_buffer_descriptor_set,
-                )
-                .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                .unwrap()
-                .end_render_pass()
-                .unwrap();
-            Arc::new(builder.build().unwrap())
+    pub fn init_command_buffer(&mut self) -> () {
+        let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
+            self.device.clone(),
+            self.active_queue_family_index,
+            CommandBufferUsage::MultipleSubmit,
+        )
+        .unwrap();
+
+        let vertex_total_count = self.vertex_buffers.clone().into_iter().fold(0, |acc, vertex_buffer|{
+            acc + vertex_buffer.len()
+        }) as u32;
+
+        println!("{}", vertex_total_count);
+        command_buffer_builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                    ..RenderPassBeginInfo::framebuffer(self.framebuffer.as_ref().unwrap().clone())
+                },
+                SubpassContents::Inline,
+            )
+            .unwrap()
+            .bind_pipeline_graphics(self.pipeline.clone())
+            .bind_vertex_buffers(0, self.vertex_buffers.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                self.pipeline.layout().clone(),
+                0,
+                self.uniform_buffer_descriptor_set.clone(),
+            )
+            .draw(vertex_total_count, 1, 0, 0)
+            .unwrap()
+            .end_render_pass()
+            .unwrap();
+        
+        let command_buffer = Arc::new(command_buffer_builder.build().unwrap());
+        self.command_buffer = Some(command_buffer);
+    }
+
+    pub fn add_vertex_buffer(&mut self, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>) {
+        self.vertex_buffers.push(vertex_buffer);
+        self.init_command_buffer();
     }
 }

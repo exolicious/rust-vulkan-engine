@@ -1,6 +1,6 @@
 use std::{sync::Arc};
 
-use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError, PresentInfo}};
+use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError}};
 use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
 use crate::engine::engine::Engine;
@@ -50,19 +50,19 @@ impl WindowManager {
             } => {
                 if input.scancode == 17 {
                     //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update()
+                    self.engine.update();
                 }
-                if input.scancode == 17 {
+                if input.scancode == 57 {
+                    match input.state {
+                        winit::event::ElementState::Pressed => {
+                            self.engine.add_cube_to_scene();
+                            println!("added cube");
+                        }
+                        _ => ()
+                    }
+                    
                     //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update()
-                }
-                if input.scancode == 17 {
-                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update()
-                }
-                if input.scancode == 17 {
-                    //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update()
+                   
                 }
             }
             Event::MainEventsCleared => {

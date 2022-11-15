@@ -1,4 +1,4 @@
-use std::{sync::Arc, ops::{DerefMut, Deref}};
+use std::{sync::Arc};
 
 use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner}, rendering::renderer::Renderer};
 
@@ -67,7 +67,6 @@ impl Camera {
         match self.uniform_buffers[swapchain_image_index].write() {
             Err(_) => println!("Error"),
             Ok(mut write_lock) => { 
-                println!("Success");
                 *write_lock = self.projection_view_matrix.into();
             }
         };
