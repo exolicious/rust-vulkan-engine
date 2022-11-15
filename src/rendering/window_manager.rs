@@ -5,6 +5,8 @@ use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
 use crate::engine::engine::Engine;
 
+use super::renderer::RendererEvent;
+
 pub struct WindowManager {
     pub engine: Engine,
     pub event_loop: EventLoop<()>,
@@ -25,9 +27,6 @@ impl WindowManager {
     }
 
     pub fn start_engine(mut self) -> () {
-        let mut window_resized = false;
-        let mut recreate_swapchain = false;
-
         let frames_in_flight = self.engine.renderer.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
@@ -43,7 +42,7 @@ impl WindowManager {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                window_resized = true;
+                self.engine.renderer.receive_event(RendererEvent::WindowResized);
             }
             Event::WindowEvent {
                 event: WindowEvent::KeyboardInput { device_id, input, is_synthetic },
@@ -67,28 +66,18 @@ impl WindowManager {
                 }
             }
             Event::MainEventsCleared => {
-                if window_resized || recreate_swapchain {
-                    recreate_swapchain = false;
-                    self.engine.renderer.recreate_swapchain_and_framebuffers();
-                    if window_resized {
-                        window_resized = false;
-                        self.engine.renderer.recreate_pipeline();
-                    }
-                    self.engine.renderer.init_frames();
-                }
-
                 let (swapchain_image_index, suboptimal, acquire_future) =
                     match swapchain::acquire_next_image(self.engine.renderer.swapchain.clone(), None) {
                         Ok(r) => r,
                         Err(AcquireError::OutOfDate) => {
-                            recreate_swapchain = true;
+                            self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
                             return;
                         }
                         Err(e) => panic!("Failed to acquire next image: {:?}", e),
                     };
 
                 if suboptimal {
-                    recreate_swapchain = true;
+                    self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
                 }
 
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
@@ -99,24 +88,22 @@ impl WindowManager {
                 }
 
                 let previous_future = match fences[previous_fence_i].clone() {
-                    // Create a NowFuture
                     None => {
                         let mut now = sync::now(self.engine.renderer.device.clone());
                         now.cleanup_finished();
                         now.boxed()
                     }
-                    // Use the existing FenceSignalFuture
                     Some(fence) => fence.boxed(),
                 };
 
-                let future =  self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
+                let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
 
                 fences[swapchain_image_index] = match future {
                     Ok(value) => {
                         Some(Arc::new(value))
                     }
                     Err(FlushError::OutOfDate) => {
-                        recreate_swapchain = true;
+                        self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
                         None
                     }
                     Err(e) => {
@@ -124,7 +111,6 @@ impl WindowManager {
                         None
                     }
                 };
-                
                 previous_fence_i = swapchain_image_index;
             }
             _ => (),

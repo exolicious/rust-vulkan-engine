@@ -13,7 +13,6 @@ use crate::rendering::rendering_traits::UniformBufferOwner;
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders, rendering_traits::Mesh};
 
 use crate::rendering::rendering_traits::UpdateGraphics;
-
 pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
     pub entities: Vec<Rc<RefCell<dyn UpdateGraphics>>>,
@@ -37,8 +36,8 @@ impl Engine {
             },
             false,
             cube.borrow().unwrap_vertices().into_iter(),
-        ).unwrap();
-
+        )
+        .unwrap();
         
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
         renderer.build(shaders.vertex_shader, shaders.fragment_shader, camera.borrow().get_uniform_buffers(), vertex_buffer);
@@ -54,6 +53,7 @@ impl Engine {
     }
 
     pub fn update_graphics(&mut self) -> () {
+        self.renderer.work_off_queue();
         for entity in & mut self.entities {
             entity.try_borrow_mut().unwrap().update_graphics(self.latest_swapchain_image_index);
         }

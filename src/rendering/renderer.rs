@@ -16,6 +16,13 @@ use crate::{initialize::vulkan_instancing::get_vulkan_instance};
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
+
+pub enum RendererEvent {
+    WindowResized,
+    RecreateSwapchain
+}
+
+
 pub struct Renderer<T> {
     //vulkan_instance: Arc<Instance>,
     viewport: Viewport,
@@ -28,6 +35,7 @@ pub struct Renderer<T> {
     pub swapchain: Arc<Swapchain<Window>>,
     pub swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
     render_pass: Arc<RenderPass>,
+    event_queue: Vec<RendererEvent>,
     frames: Option<Vec<Frame>>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
@@ -54,12 +62,13 @@ impl Renderer<Surface<Window>> {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
-
+       
         let (physical_device, queue_family_index) = Self::init_physical_device_and_queue_family_index(device_extensions.clone(), vulkan_instance.clone(), surface.clone());
         let (device, queues, active_queue) = Self::init_device_and_queues(device_extensions.clone(), queue_family_index.clone(), physical_device.clone());
         let (swapchain, swapchain_images) = Self::init_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), device.clone());
         
         let render_pass = Self::create_render_pass(device.clone(), swapchain.clone());
+        let event_queue = Vec::new();
         Self {
             //vulkan_instance,
             viewport,
@@ -72,6 +81,7 @@ impl Renderer<Surface<Window>> {
             swapchain,
             swapchain_images,
             render_pass,
+            event_queue,
             pipeline: None,
             frames: None,
             vertex_shader: None,
@@ -81,7 +91,7 @@ impl Renderer<Surface<Window>> {
         }
     }
 
-    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>,  fragment_shader: Arc<ShaderModule>, uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>) -> () {
+    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>, uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>) -> () {
         self.init_shaders(vertex_shader, fragment_shader);
         self.init_uniform_buffers(uniform_buffers);
         self.init_vertex_buffers(vertex_buffer);
@@ -201,6 +211,8 @@ impl Renderer<Surface<Window>> {
     }
 
     pub fn init_pipeline(&mut self) -> () {
+        let new_dimensions = self.surface.window().inner_size();
+        self.viewport.dimensions = new_dimensions.into();
         let pipeline = GraphicsPipeline::start()
             .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
             .vertex_shader(self.vertex_shader.as_ref().unwrap().entry_point("main").unwrap(), ())
@@ -221,19 +233,41 @@ impl Renderer<Surface<Window>> {
         self.uniform_buffers = Some(uniform_buffers);
     }
 
-    pub fn init_frames(& mut self) {
+    pub fn receive_event(&mut self, event: RendererEvent) {
+        self.event_queue.push(event)
+    }
+
+    pub fn work_off_queue(&mut self) {
+        match self.event_queue.pop() {
+            Some(event) => {
+                match event {
+                    RendererEvent::WindowResized => {
+                        self.recreate_swapchain_and_framebuffers();
+                        self.init_pipeline();
+                    }
+                    RendererEvent::RecreateSwapchain => {
+                        self.recreate_swapchain_and_framebuffers();
+                    }
+                }
+                self.init_frames()
+            }
+            None => ()
+        }
+    }
+
+    pub fn init_frames(&mut self) {
         let mut temp_frames = Vec::new();
         //if self.pipeline.is_none() { self.create_pipeline() }
         for (swapchain_image_index, swapchain_image) in self.swapchain_images.iter().enumerate() {
             temp_frames.push(
                 Frame::new(
-                            swapchain_image.clone(), 
-                            self.render_pass.clone(), 
-                            self.device.clone(), 
-                            self.active_queue.queue_family_index(), 
-                            self.pipeline.as_ref().unwrap().clone(), 
-                            self.vertex_buffer.as_ref().unwrap().clone(), 
-                            self.get_uniform_buffer_descriptor_set(swapchain_image_index)
+                    swapchain_image.clone(), 
+                    self.render_pass.clone(), 
+                    self.device.clone(), 
+                    self.active_queue.queue_family_index(), 
+                    self.pipeline.as_ref().unwrap().clone(), 
+                    self.vertex_buffer.as_ref().unwrap().clone(), 
+                    self.get_uniform_buffer_descriptor_set(swapchain_image_index)
                 )
             )
         }
@@ -269,12 +303,6 @@ impl Renderer<Surface<Window>> {
 
     fn recreate_render_pass(&mut self) -> () {
         self.render_pass = Self::create_render_pass(self.device.clone(), self.swapchain.clone());
-    }
-
-    pub fn recreate_pipeline(&mut self) -> () {
-        let new_dimensions = self.surface.window().inner_size();
-        self.viewport.dimensions = new_dimensions.into();
-        self.init_pipeline();
     }
 
     pub fn get_future(&self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
