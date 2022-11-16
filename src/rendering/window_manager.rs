@@ -55,8 +55,8 @@ impl WindowManager {
                 if input.scancode == 57 {
                     match input.state {
                         winit::event::ElementState::Pressed => {
-                            self.engine.add_cube_to_scene();
                             println!("added cube");
+                            self.engine.add_cube_to_scene();
                         }
                         _ => ()
                     }

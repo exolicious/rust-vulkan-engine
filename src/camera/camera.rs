@@ -1,6 +1,6 @@
 use std::{sync::Arc};
 
-use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner}, rendering::renderer::Renderer};
+use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner, HasMesh}, rendering::{renderer::Renderer, primitives::RenderableEntity}, engine::general_traits::Entity};
 
 use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, swapchain::Surface};
@@ -52,15 +52,10 @@ impl Camera {
 
     pub fn recalculate_projection_view_matrix(&mut self) -> () {
         let translation_matrix = Matrix4::from_translation(self.transform.position);
-        //println!("translation Matrix: {:?}", translation_matrix);
         let orientation_matrix = Matrix4::from_axis_angle(self.transform.rotation.v.normalize(), Deg {0: self.transform.rotation.s});
-        //println!("orientation Matrix: {:?}", orientation_matrix);
-        //println!("PV matrix BEFORE: {:?}", self.view_matrix);
+
         self.view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
-        println!("{:?}", self.view_matrix);
         self.projection_view_matrix = self.projection_matrix * self.view_matrix;
-        //println!("PV matrix AFTER: {:?}", self.view_matrix);
-        println!("{:?}", self.projection_view_matrix);
     }
 
     pub fn flush_uniform_buffer(& self, swapchain_image_index: usize) {
@@ -73,9 +68,22 @@ impl Camera {
     }
 }
 
+impl Entity for Camera {}
+
 impl UpdateGraphics for Camera {
     fn update_graphics(& self, swapchain_image_index: usize) -> () {
         self.flush_uniform_buffer(swapchain_image_index);
+    }
+}
+
+impl RenderableEntity for Camera {}
+impl HasMesh for Camera {
+    fn generate_mesh(&mut self) -> () {
+        todo!()
+    }
+
+    fn unwrap_vertices(&self) -> Vec<crate::rendering::primitives::Vertex> {
+        todo!()
     }
 }
 

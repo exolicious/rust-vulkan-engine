@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -10,62 +11,62 @@ use winit::window::Window;
 
 use crate::camera::camera::Camera;
 use crate::physics::physics_traits::{Movable, Transform};
+use crate::rendering::entities::Entities;
 use crate::rendering::primitives::Vertex;
 use crate::rendering::renderer::RendererEvent;
-use crate::rendering::rendering_traits::UniformBufferOwner;
-use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders, rendering_traits::Mesh};
+use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders, rendering_traits::{HasMesh}};
 
-use crate::rendering::rendering_traits::UpdateGraphics;
+
 pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
-    pub entities: Vec<Rc<RefCell<dyn UpdateGraphics>>>,
-    pub camera: Rc<RefCell<Camera>>,
+    entities: Entities,
     pub latest_swapchain_image_index: usize,
 }
 
 impl Engine {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let mut renderer = Renderer::new(&event_loop);
-        let mut entities: Vec<Rc<RefCell<dyn UpdateGraphics>>> = Vec::new();
+        let mut entities = Entities::new();
 
-        let cube = Cube::default();
+        let mut cube = Box::new(Cube::default());
+        cube.generate_mesh();
+        let camera = Camera::new(&renderer);
+
         
-        let camera = Rc::new(RefCell::new(Camera::new(&renderer)));
         let vertex_buffer = Engine::create_vertex_buffer(&cube, &renderer);
         let mut initial_vertex_buffers = Vec::new();
         initial_vertex_buffers.push(vertex_buffer);
-        
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
-        renderer.build(shaders.vertex_shader, shaders.fragment_shader, camera.borrow().get_uniform_buffers(), Some(initial_vertex_buffers));
+
+        renderer.use_camera(camera);
+        renderer.build(shaders.vertex_shader, shaders.fragment_shader, Some(initial_vertex_buffers));
+
+        entities.push(cube);
         
-        let wrapped_cube = Rc::new(RefCell::new(cube));
-        entities.push(wrapped_cube.clone());
-        entities.push(camera.clone());
         Self {
             renderer,
             entities,
-            camera: camera,
             latest_swapchain_image_index: 0,
         }
     }
 
     pub fn update_graphics(&mut self) -> () {
         self.renderer.work_off_queue();
-        for entity in & mut self.entities {
-            entity.try_borrow_mut().unwrap().update_graphics(self.latest_swapchain_image_index);
+        for entity in &self.entities.entities {
+            entity.update_graphics(self.latest_swapchain_image_index);
         }
     }
 
     pub fn update(&mut self) -> () {
-        self.camera.try_borrow_mut().unwrap().update_position();
+        self.renderer.camera.as_mut().unwrap().update_position();
     }
 
     pub fn add_cube_to_scene(&mut self){
         let mut cube = Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform::default());
+        cube.generate_mesh();
         let vertex_buffer = Engine::create_vertex_buffer(&cube, &self.renderer);
-
         cube.update_position();
-        let wrapped_cube = Rc::new(RefCell::new(cube));
+        let wrapped_cube = Box::new(cube);
         
         self.entities.push(wrapped_cube);
         self.renderer.receive_event(RendererEvent::EntityAdded(vertex_buffer));

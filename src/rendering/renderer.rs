@@ -10,17 +10,17 @@ use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCrea
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
-use crate::{initialize::vulkan_instancing::get_vulkan_instance};
+use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::Camera};
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
+use super::rendering_traits::UniformBufferOwner;
 
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
     EntityAdded(Arc<CpuAccessibleBuffer<[Vertex]>>)
 }
-
 
 pub struct Renderer<T> {
     //vulkan_instance: Arc<Instance>,
@@ -36,6 +36,7 @@ pub struct Renderer<T> {
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
     frames: Vec<Frame>,
+    pub camera: Option<Camera>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
@@ -83,8 +84,9 @@ impl Renderer<Surface<Window>> {
             swapchain_images,
             render_pass,
             event_queue,
-            pipeline: None,
             frames,
+            camera: None,
+            pipeline: None,
             vertex_shader: None,
             fragment_shader: None,
             vertex_buffers,
@@ -92,11 +94,17 @@ impl Renderer<Surface<Window>> {
         }
     }
 
-    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>, 
-                uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, vertex_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>>) -> () {
-        self.init_shaders(vertex_shader, fragment_shader);
-        self.init_uniform_buffers(uniform_buffers);
-        self.init_vertex_buffers(vertex_buffers);
+    pub fn use_camera(&mut self, camera: Camera) {
+        self.camera = Some(camera);
+    }
+
+    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>, vertex_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>>) -> () {
+        self.vertex_shader = Some(vertex_shader);
+        self.fragment_shader = Some(fragment_shader);
+        self.uniform_buffers = Some(self.camera.as_ref().unwrap().get_uniform_buffers());
+        for vertex_buffer in vertex_buffers.unwrap() {
+            self.vertex_buffers.push(vertex_buffer);
+        }
         self.init_pipeline();
         self.init_frames();
     }
@@ -199,19 +207,6 @@ impl Renderer<Surface<Window>> {
         render_pass
     }
 
-    pub fn init_shaders(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> () {
-        self.set_vertex_shader(vertex_shader);
-        self.set_fragment_shader(fragment_shader);
-    }
-
-    pub fn set_vertex_shader(&mut self, vertex_shader: Arc<ShaderModule>) -> () {
-        self.vertex_shader = Some(vertex_shader);
-    }
-
-    pub fn set_fragment_shader(&mut self, fragment_shader: Arc<ShaderModule>) -> () {
-        self.fragment_shader = Some(fragment_shader);
-    }
-
     pub fn init_pipeline(&mut self) -> () {
         let new_dimensions = self.surface.window().inner_size();
         self.viewport.dimensions = new_dimensions.into();
@@ -225,16 +220,6 @@ impl Renderer<Surface<Window>> {
             .build(self.device.clone())
             .unwrap();
         self.pipeline = Some(pipeline);
-    }
-
-    pub fn init_vertex_buffers(&mut self, vertex_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>>) -> () {
-        for vertex_buffer in vertex_buffers.unwrap() {
-            self.vertex_buffers.push(vertex_buffer);
-        }
-    }
-
-    pub fn init_uniform_buffers(&mut self, uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>) -> () {
-        self.uniform_buffers = Some(uniform_buffers);
     }
 
     pub fn receive_event(&mut self, event: RendererEvent) {
@@ -258,7 +243,6 @@ impl Renderer<Surface<Window>> {
                         for frame in &mut self.frames {
                             frame.add_vertex_buffer(vertex_buffer.clone());
                         }
-                        self.init_frames();
                     }
                 }
             }
@@ -285,7 +269,7 @@ impl Renderer<Surface<Window>> {
         self.frames = temp_frames;
     }
 
-    pub fn get_uniform_buffer_descriptor_set(&self, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+    pub fn get_uniform_buffer_descriptor_set(& self, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
         let binding = self.pipeline.as_ref().unwrap().clone();
         let layout = binding.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
@@ -316,7 +300,7 @@ impl Renderer<Surface<Window>> {
         self.render_pass = Self::create_render_pass(self.device.clone(), self.swapchain.clone());
     }
 
-    pub fn get_future(&self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
+    pub fn get_future(& self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
         previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.frames[image_i].command_buffer.as_ref().unwrap().clone())

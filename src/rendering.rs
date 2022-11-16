@@ -4,3 +4,5 @@ pub mod shaders;
 pub mod primitives;
 pub mod rendering_traits;
 pub mod frame;
+pub mod buffer_manager;
+pub mod entities;
