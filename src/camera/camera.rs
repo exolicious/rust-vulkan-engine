@@ -1,6 +1,6 @@
 use std::{sync::Arc};
 
-use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner, HasMesh}, rendering::{renderer::Renderer, primitives::RenderableEntity}, engine::general_traits::Entity};
+use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, UniformBufferOwner, HasMesh, RenderableEntity, MatrixBufferData}, rendering::{renderer::Renderer}, engine::general_traits::Entity};
 
 use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, swapchain::Surface};
@@ -76,20 +76,9 @@ impl UpdateGraphics for Camera {
     }
 }
 
-impl RenderableEntity for Camera {}
-impl HasMesh for Camera {
-    fn generate_mesh(&mut self) -> () {
-        todo!()
-    }
-
-    fn unwrap_vertices(&self) -> Vec<crate::rendering::primitives::Vertex> {
-        todo!()
-    }
-}
-
 impl Movable for Camera {
     fn update_position(&mut self) -> () {
-        self.move_z(0.05);
+        self.move_y(0.005);
     }
 
     fn on_move(& mut self) -> () {
@@ -116,8 +105,8 @@ impl Movable for Camera {
     }
 }
 
-impl UniformBufferOwner<[[f32; 4]; 4]> for Camera {
-    fn get_uniform_buffers(& self) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
+impl UniformBufferOwner<MatrixBufferData> for Camera {
+    fn get_uniform_buffers(& self) -> Vec<Arc<CpuAccessibleBuffer<MatrixBufferData>>> {
         self.uniform_buffers.clone()
     }
 }

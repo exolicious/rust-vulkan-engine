@@ -3,7 +3,7 @@ use cgmath::Vector3;
 
 use crate::{physics::physics_traits::{Transform, Movable}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
 
-use super::rendering_traits::HasMesh;
+use super::rendering_traits::{HasMesh, RenderableEntity};
 
 
 
@@ -51,8 +51,6 @@ impl Cube {
         }
     }
 }
-
-pub trait RenderableEntity : Entity + UpdateGraphics + HasMesh {}
 
 impl RenderableEntity for Cube {}
 
@@ -161,7 +159,6 @@ impl HasMesh for Cube {
         resulting_mesh.push(triangle_12);
 
         self.mesh = Some(resulting_mesh);
-
     }
 
     fn unwrap_vertices(&self) -> Vec<Vertex> {

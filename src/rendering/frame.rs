@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline, graphics::vertex_input::VertexBuffersCollection}, buffer::{CpuAccessibleBuffer, TypedBufferAccess, BufferAccess}, descriptor_set::PersistentDescriptorSet};
+use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, 
+    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, 
+    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline}, buffer::{CpuAccessibleBuffer, TypedBufferAccess}, descriptor_set::PersistentDescriptorSet};
 use winit::window::Window;
 
 use super::primitives::Vertex;

@@ -1,8 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
-use crate::engine::general_traits::Entity;
-
-use super::{rendering_traits::UpdateGraphics, primitives::RenderableEntity};
+use super::rendering_traits::RenderableEntity;
 
 pub struct Entities {
     pub entities: Vec<Box<dyn RenderableEntity>>,
