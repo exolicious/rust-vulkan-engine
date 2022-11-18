@@ -5,23 +5,16 @@ use crate::engine::general_traits::Entity;
 
 use super::primitives::{Vertex};
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-
 pub trait UniformBufferOwner<T: Pod + Send + Sync> {
     fn get_uniform_buffers(& self) -> Vec<Arc<CpuAccessibleBuffer<T>>>;
 }
 
 pub trait HasMesh : Entity  {
     fn generate_mesh(&mut self) -> ();
-    fn unwrap_vertices(&self) -> Vec<Vertex>;
-/*     fn set_hash(&self) -> ();
-    fn get_hash(&self) -> ();
-    fn mesh_hash(&self) {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(self.unwrap_vertices());
-        self.set_hash();
-    } */
+    fn unwrap_vertices(&self, ) -> Vec<Vertex>;
+    fn set_hash(&mut self, hash: u64) -> ();
+    fn get_hash(&self) -> u64;
+    fn mesh_hash(&mut self) -> ();
 }
 
 pub trait UpdateGraphics : Entity {

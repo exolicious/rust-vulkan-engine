@@ -14,12 +14,12 @@ use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::rendering_traits::UniformBufferOwner;
+use super::{rendering_traits::UniformBufferOwner, buffer_manager::BufferManager};
 
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded(Arc<CpuAccessibleBuffer<[Vertex]>>)
+    EntityAdded
 }
 
 pub struct Renderer<T> {
@@ -36,11 +36,11 @@ pub struct Renderer<T> {
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
     frames: Vec<Frame>,
+    pub buffer_manager: BufferManager,
     pub camera: Option<Camera>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
-    vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     uniform_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>>,
 }
 
@@ -68,8 +68,10 @@ impl Renderer<Surface<Window>> {
         let (swapchain, swapchain_images) = Self::init_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), device.clone());
         
         let render_pass = Self::create_render_pass(device.clone(), swapchain.clone());
+
+        let buffer_manager = BufferManager::new(device.clone(), swapchain_images.len());
+        
         let event_queue = Vec::new();
-        let vertex_buffers = Vec::new();
         let frames = Vec::new();
         Self {
             //vulkan_instance,
@@ -85,11 +87,11 @@ impl Renderer<Surface<Window>> {
             render_pass,
             event_queue,
             frames,
+            buffer_manager,
             camera: None,
             pipeline: None,
             vertex_shader: None,
             fragment_shader: None,
-            vertex_buffers,
             uniform_buffers: None
         }
     }
@@ -98,13 +100,10 @@ impl Renderer<Surface<Window>> {
         self.camera = Some(camera);
     }
 
-    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>, vertex_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>>) -> () {
+    pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> () {
         self.vertex_shader = Some(vertex_shader);
         self.fragment_shader = Some(fragment_shader);
         self.uniform_buffers = Some(self.camera.as_ref().unwrap().get_uniform_buffers());
-        for vertex_buffer in vertex_buffers.unwrap() {
-            self.vertex_buffers.push(vertex_buffer);
-        }
         self.init_pipeline();
         self.init_frames();
     }
@@ -239,10 +238,8 @@ impl Renderer<Surface<Window>> {
                         self.recreate_swapchain_and_framebuffers();
                         self.init_frames()
                     }
-                    RendererEvent::EntityAdded(vertex_buffer) => {
-                        for frame in &mut self.frames {
-                            frame.add_vertex_buffer(vertex_buffer.clone());
-                        }
+                    RendererEvent::EntityAdded => {
+                        //todo: check what mesh the entity has, check if the vertex_buffer is large enough
                     }
                 }
             }
@@ -250,6 +247,7 @@ impl Renderer<Surface<Window>> {
         }
     }
 
+    //has to be called, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
     pub fn init_frames(&mut self) {
         let mut temp_frames = Vec::new();
         //if self.pipeline.is_none() { self.create_pipeline() }
@@ -260,7 +258,7 @@ impl Renderer<Surface<Window>> {
                 self.device.clone(), 
                 self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
-                self.vertex_buffers.clone(), 
+                self.buffer_manager.vertex_buffers[swapchain_image_index].clone(), 
                 self.get_uniform_buffer_descriptor_set(swapchain_image_index)
             );
             temp_frame.init();

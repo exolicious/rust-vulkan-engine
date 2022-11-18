@@ -6,13 +6,16 @@ use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, swapchain::Surface};
 use winit::window::Window;
 
+use nanoid::nanoid;
+
 #[derive(Debug, Clone)]
 pub struct Camera {
     transform: Transform,
     projection_matrix: Matrix4<f32>,
     view_matrix: Matrix4<f32>,
     pub projection_view_matrix: Matrix4<f32>,
-    uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>
+    uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
+    id: Option<String>
 }
 
 impl Camera {
@@ -34,10 +37,11 @@ impl Camera {
         }
 
         let transform = Transform { ..Default::default() };
+        let projection_matrix = perspective(Deg{0: 55.}, 16./9. , 1., 40.);
 
         let translation_matrix = Matrix4::from_translation(transform.position);
         let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg {0: transform.rotation.s});
-        let projection_matrix = perspective(Deg{0: 55.}, 16./9. , 1., 40.);
+        
         let view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
         let projection_view_matrix = projection_matrix * view_matrix;
        
@@ -46,11 +50,12 @@ impl Camera {
             projection_matrix: projection_matrix,
             view_matrix: view_matrix,
             projection_view_matrix: projection_view_matrix,
-            uniform_buffers
+            uniform_buffers,
+            id: None
         }
     }
 
-    pub fn recalculate_projection_view_matrix(&mut self) -> () {
+    fn recalculate_projection_view_matrix(&mut self) -> () {
         let translation_matrix = Matrix4::from_translation(self.transform.position);
         let orientation_matrix = Matrix4::from_axis_angle(self.transform.rotation.v.normalize(), Deg {0: self.transform.rotation.s});
 
@@ -68,7 +73,15 @@ impl Camera {
     }
 }
 
-impl Entity for Camera {}
+impl Entity for Camera {
+    fn get_id(&self) -> &Option<String> {
+        &self.id
+    }
+
+    fn set_id(&mut self) -> () {
+        self.id = Some(self.create_id());
+    }
+}
 
 impl UpdateGraphics for Camera {
     fn update_graphics(& self, swapchain_image_index: usize) -> () {

@@ -1,5 +1,6 @@
 use std::{sync::Arc};
 
+use cgmath::Vector3;
 use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError}};
 use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
@@ -10,10 +11,6 @@ use super::renderer::RendererEvent;
 pub struct WindowManager {
     pub engine: Engine,
     pub event_loop: EventLoop<()>,
-/*     previous_fence_i: usize,
-    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>>>>,
-    window_resized: bool,
-    recreate_swapchain: bool, */
 }
 
 impl WindowManager {
@@ -27,6 +24,10 @@ impl WindowManager {
     }
 
     pub fn start_engine(mut self) -> () {
+        //init scene
+        self.engine.add_cube_to_scene(None);
+
+        //start event loop
         let frames_in_flight = self.engine.renderer.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
@@ -56,7 +57,7 @@ impl WindowManager {
                     match input.state {
                         winit::event::ElementState::Pressed => {
                             println!("added cube");
-                            self.engine.add_cube_to_scene();
+                            self.engine.add_cube_to_scene(Some(Vector3{x: 0.3, y: 0.3, z:0.2}));
                         }
                         _ => ()
                     }

@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use super::rendering_traits::RenderableEntity;
 
 pub struct Entities {

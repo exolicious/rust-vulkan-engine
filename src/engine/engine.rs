@@ -14,36 +14,23 @@ pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
     entities: Entities,
     pub latest_swapchain_image_index: usize,
-    buffer_manager: BufferManager
 }
 
 impl Engine {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let mut renderer = Renderer::new(&event_loop);
-        let mut entities = Entities::new();
+        let entities = Entities::new();
 
-        let buffer_manager = BufferManager::new();
-
-        let mut cube = Cube::default();
-
-        cube.generate_mesh();
         let camera = Camera::new(&renderer);
-        
-        let vertex_buffer = buffer_manager.create_vertex_buffer(&cube, &renderer);
-        let mut initial_vertex_buffers = Vec::new();
-        initial_vertex_buffers.push(vertex_buffer);
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
 
         renderer.use_camera(camera);
-        renderer.build(shaders.vertex_shader, shaders.fragment_shader, Some(initial_vertex_buffers));
-
-        entities.push(Box::new(cube));
+        renderer.build(shaders.vertex_shader, shaders.fragment_shader);
         
         Self {
             renderer,
             entities,
             latest_swapchain_image_index: 0,
-            buffer_manager
         }
     }
 
@@ -59,14 +46,22 @@ impl Engine {
         self.renderer.camera.as_mut().unwrap().update_position();
     }
 
-    pub fn add_cube_to_scene(&mut self){
-        let mut cube = Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform::default());
-        cube.generate_mesh();
-        cube.update_position();
-        let vertex_buffer = self.buffer_manager.create_vertex_buffer(&cube, &self.renderer);
-        
-        self.entities.push(Box::new(cube));
-        self.renderer.receive_event(RendererEvent::EntityAdded(vertex_buffer));
+    pub fn add_cube_to_scene(&mut self, origin: Option<Vector3<f32>>){
+        match origin {
+            Some(origin ) => {
+                let mut cube = Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform { position: origin, ..Default::default()});
+                cube.generate_mesh();
+                self.entities.push(Box::new(cube));
+                self.renderer.receive_event(RendererEvent::EntityAdded);
+            }
+            None => {
+                let mut cube = Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform::default());
+                cube.generate_mesh(); 
+                self.entities.push(Box::new(cube));
+                self.renderer.receive_event(RendererEvent::EntityAdded);
+            }
+        };
+
     }
 
 }

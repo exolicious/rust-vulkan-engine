@@ -13,7 +13,7 @@ pub struct Frame {
     device: Arc<Device>, 
     active_queue_family_index: u32, 
     pipeline: Arc<GraphicsPipeline>, 
-    vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
+    vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>,
     framebuffer: Option<Arc<Framebuffer>>,
     pub command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>
@@ -21,14 +21,14 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>, device: Arc<Device>, active_queue_family_index: u32, pipeline: Arc<GraphicsPipeline>, 
-        vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
+        vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
         Self {
             swapchain_image,
             render_pass,
             device,
             active_queue_family_index,
             pipeline,
-            vertex_buffers,
+            vertex_buffer,
             uniform_buffer_descriptor_set,
             framebuffer: None,
             command_buffer: None,
@@ -60,11 +60,6 @@ impl Frame {
         )
         .unwrap();
 
-        let vertex_total_count = self.vertex_buffers.clone().into_iter().fold(0, |acc, vertex_buffer|{
-            acc + vertex_buffer.len()
-        }) as u32;
-
-        println!("{}", vertex_total_count);
         command_buffer_builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -75,14 +70,14 @@ impl Frame {
             )
             .unwrap()
             .bind_pipeline_graphics(self.pipeline.clone())
-            .bind_vertex_buffers(0, self.vertex_buffers.clone())
+            .bind_vertex_buffers(0, self.vertex_buffer.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 self.pipeline.layout().clone(),
                 0,
                 self.uniform_buffer_descriptor_set.clone(),
             )
-            .draw(vertex_total_count, 1, 0, 0)
+            .draw(32, 1, 0, 0)
             .unwrap()
             .end_render_pass()
             .unwrap();
@@ -92,7 +87,7 @@ impl Frame {
     }
 
     pub fn add_vertex_buffer(&mut self, vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>) {
-        self.vertex_buffers.push(vertex_buffer);
+        self.vertex_buffer = vertex_buffer;
         self.init_command_buffer();
     }
 }

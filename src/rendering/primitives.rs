@@ -1,3 +1,5 @@
+use std::{collections::hash_map::DefaultHasher, hash::Hasher};
+
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 
@@ -37,8 +39,10 @@ impl Triangle {
 
 pub struct Cube {
     pub bounds: Vector3<f32>, 
-    mesh: Option<Vec<Triangle>>,
     transform: Transform,
+    mesh: Option<Vec<Triangle>>,
+    id: Option<String>,
+    hash: Option<u64>
     //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
 
@@ -46,15 +50,26 @@ impl Cube {
     pub fn new(bounds: Vector3<f32>, transform: Transform) -> Self {
         Self {
             bounds,
+            transform,
             mesh: None,
-            transform
+            hash: None,
+            id: None
         }
     }
 }
 
 impl RenderableEntity for Cube {}
 
-impl Entity for Cube {}
+impl Entity for Cube {
+    fn get_id(&self) -> &Option<String> {
+        &self.id
+    }
+
+    fn set_id(&mut self) -> () {
+        self.id = Some(self.create_id());
+    }
+    
+}
 
 impl UpdateGraphics for Cube {
     fn update_graphics(& self, swapchain_image_index: usize) -> () {
@@ -70,7 +85,8 @@ impl Default for Cube {
             bounds : bounds,
             mesh: None,
             transform: Transform::default(),
-            //vertex_buffer
+            hash: None,
+            id: None
         }
     }
 }
@@ -169,6 +185,31 @@ impl HasMesh for Cube {
             }
         }
         result
+    }
+
+    fn set_hash(&mut self, hash: u64) -> () {
+        self.hash = Some(hash);
+    }
+
+    fn get_hash(&self) -> u64 {
+        todo!()
+    }
+
+    fn mesh_hash(&mut self) -> () {
+        let mut hasher = DefaultHasher::new();
+        
+        let mut result = Vec::new();
+        for triangle in self.mesh.as_ref().unwrap() {
+            for i in 0..triangle.vertices.len() {
+                for j in triangle.vertices[i].position {
+                    let rounded_coord =  (j * 100_f32) as u8;
+                    result.push(rounded_coord);
+                }
+            }
+        }
+        hasher.write(&result);
+        let hash = hasher.finish();
+        self.set_hash(hash);
     }
 }
 
