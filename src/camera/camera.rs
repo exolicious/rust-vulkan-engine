@@ -15,7 +15,7 @@ pub struct Camera {
     view_matrix: Matrix4<f32>,
     pub projection_view_matrix: Matrix4<f32>,
     uniform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
-    id: Option<String>
+    id: String
 }
 
 impl Camera {
@@ -51,7 +51,7 @@ impl Camera {
             view_matrix: view_matrix,
             projection_view_matrix: projection_view_matrix,
             uniform_buffers,
-            id: None
+            id: nanoid!()
         }
     }
 
@@ -74,12 +74,8 @@ impl Camera {
 }
 
 impl Entity for Camera {
-    fn get_id(&self) -> &Option<String> {
+    fn get_id(&self) -> &String {
         &self.id
-    }
-
-    fn set_id(&mut self) -> () {
-        self.id = Some(self.create_id());
     }
 }
 

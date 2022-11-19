@@ -3,18 +3,15 @@ use std::{sync::Arc};
 use vulkano::buffer::CpuAccessibleBuffer;
 use crate::engine::general_traits::Entity;
 
-use super::primitives::{Vertex};
+use super::primitives::{Triangle, Mesh};
 
 pub trait UniformBufferOwner<T: Pod + Send + Sync> {
     fn get_uniform_buffers(& self) -> Vec<Arc<CpuAccessibleBuffer<T>>>;
 }
 
 pub trait HasMesh : Entity  {
-    fn generate_mesh(&mut self) -> ();
-    fn unwrap_vertices(&self, ) -> Vec<Vertex>;
-    fn set_hash(&mut self, hash: u64) -> ();
-    fn get_hash(&self) -> u64;
-    fn mesh_hash(&mut self) -> ();
+    fn get_triangles(& self) -> Vec<Triangle>;
+    fn generate_mesh(& self) -> Mesh;
 }
 
 pub trait UpdateGraphics : Entity {

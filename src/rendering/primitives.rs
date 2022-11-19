@@ -1,4 +1,4 @@
-use std::{collections::hash_map::DefaultHasher, hash::Hasher};
+use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, DerefMut}};
 
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
@@ -6,6 +6,8 @@ use cgmath::Vector3;
 use crate::{physics::physics_traits::{Transform, Movable}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
 
 use super::rendering_traits::{HasMesh, RenderableEntity};
+
+use nanoid::nanoid;
 
 
 
@@ -16,6 +18,37 @@ pub struct Vertex {
     //pub color: [f32; 4]
 }
 vulkano::impl_vertex!(Vertex, position);
+
+impl Deref for Vertex {
+    type Target = [f32; 3];
+
+    fn deref(&self) -> &Self::Target {
+        &self.position
+    }
+
+}
+
+impl DerefMut for Vertex {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.position
+    }
+}
+
+
+pub struct Mesh {
+    pub data: Vec<Vertex>,
+    pub vertex_count: usize
+}
+
+impl Mesh {
+    pub fn new(data: Vec<Vertex>) -> Self {
+        let len = data.len();
+        Self {
+            data,
+            vertex_count: len
+        }
+    }
+}
 
 pub struct Triangle {
     pub vertices: [Vertex; 3]
@@ -40,9 +73,7 @@ impl Triangle {
 pub struct Cube {
     pub bounds: Vector3<f32>, 
     transform: Transform,
-    mesh: Option<Vec<Triangle>>,
-    id: Option<String>,
-    hash: Option<u64>
+    id: String,
     //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
 
@@ -51,9 +82,7 @@ impl Cube {
         Self {
             bounds,
             transform,
-            mesh: None,
-            hash: None,
-            id: None
+            id: nanoid!()
         }
     }
 }
@@ -61,14 +90,9 @@ impl Cube {
 impl RenderableEntity for Cube {}
 
 impl Entity for Cube {
-    fn get_id(&self) -> &Option<String> {
+    fn get_id(&self) -> &String {
         &self.id
     }
-
-    fn set_id(&mut self) -> () {
-        self.id = Some(self.create_id());
-    }
-    
 }
 
 impl UpdateGraphics for Cube {
@@ -83,10 +107,8 @@ impl Default for Cube {
         
         Self {
             bounds : bounds,
-            mesh: None,
             transform: Transform::default(),
-            hash: None,
-            id: None
+            id: nanoid!()
         }
     }
 }
@@ -121,7 +143,7 @@ impl Movable for Cube {
 }
 
 impl HasMesh for Cube {
-    fn generate_mesh(&mut self) -> () {
+    fn get_triangles(&self) -> Vec<Triangle> {
         let mut resulting_mesh: Vec<Triangle> = Vec::new();
         let (x_bounds, y_bounds, z_bounds) = (self.bounds[0], self.bounds[1], self.bounds[2]);
 
@@ -174,42 +196,17 @@ impl HasMesh for Cube {
         resulting_mesh.push(triangle_11);
         resulting_mesh.push(triangle_12);
 
-        self.mesh = Some(resulting_mesh);
+        resulting_mesh
     }
 
-    fn unwrap_vertices(&self) -> Vec<Vertex> {
+    fn generate_mesh(& self) -> Mesh {
         let mut result = Vec::new();
-        for triangle in self.mesh.as_ref().unwrap() {
+        for triangle in self.get_triangles() {
             for i in 0..triangle.vertices.len() {
                 result.push(triangle.vertices[i])
             }
         }
-        result
-    }
-
-    fn set_hash(&mut self, hash: u64) -> () {
-        self.hash = Some(hash);
-    }
-
-    fn get_hash(&self) -> u64 {
-        todo!()
-    }
-
-    fn mesh_hash(&mut self) -> () {
-        let mut hasher = DefaultHasher::new();
-        
-        let mut result = Vec::new();
-        for triangle in self.mesh.as_ref().unwrap() {
-            for i in 0..triangle.vertices.len() {
-                for j in triangle.vertices[i].position {
-                    let rounded_coord =  (j * 100_f32) as u8;
-                    result.push(rounded_coord);
-                }
-            }
-        }
-        hasher.write(&result);
-        let hash = hasher.finish();
-        self.set_hash(hash);
+        Mesh::new(result)
     }
 }
 

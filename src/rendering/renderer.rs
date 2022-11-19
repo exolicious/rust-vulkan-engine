@@ -14,12 +14,12 @@ use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::{rendering_traits::UniformBufferOwner, buffer_manager::BufferManager};
+use super::{rendering_traits::{UniformBufferOwner, HasMesh}, buffer_manager::BufferManager};
 
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded
+    EntityAdded(Arc<dyn HasMesh>)
 }
 
 pub struct Renderer<T> {
@@ -238,8 +238,8 @@ impl Renderer<Surface<Window>> {
                         self.recreate_swapchain_and_framebuffers();
                         self.init_frames()
                     }
-                    RendererEvent::EntityAdded => {
-                        //todo: check what mesh the entity has, check if the vertex_buffer is large enough
+                    RendererEvent::EntityAdded(entity) => {
+                        self.buffer_manager.register_entity_to_buffer(entity)
                     }
                 }
             }
@@ -258,7 +258,7 @@ impl Renderer<Surface<Window>> {
                 self.device.clone(), 
                 self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
-                self.buffer_manager.vertex_buffers[swapchain_image_index].clone(), 
+                self.buffer_manager.vertex_buffer.clone(), 
                 self.get_uniform_buffer_descriptor_set(swapchain_image_index)
             );
             temp_frame.init();

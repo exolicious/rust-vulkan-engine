@@ -2,12 +2,12 @@ use std::{sync::Arc};
 
 use cgmath::Vector3;
 use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError}};
-use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
+use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, platform::run_return::EventLoopExtRunReturn};
 
 use crate::engine::engine::Engine;
 
 use super::renderer::RendererEvent;
-
+ 
 pub struct WindowManager {
     pub engine: Engine,
     pub event_loop: EventLoop<()>,
@@ -32,7 +32,7 @@ impl WindowManager {
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
 
-        self.event_loop.run(move |event, _, control_flow| match event {
+        self.event_loop.run_return(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
