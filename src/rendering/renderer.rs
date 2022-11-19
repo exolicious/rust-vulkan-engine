@@ -14,12 +14,12 @@ use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::{rendering_traits::{UniformBufferOwner, HasMesh}, buffer_manager::BufferManager};
+use super::{rendering_traits::{UniformBufferOwner, HasMesh, RenderableEntity}, buffer_manager::BufferManager};
 
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded(Arc<dyn HasMesh>)
+    EntityAdded(Arc<dyn RenderableEntity>)
 }
 
 pub struct Renderer<T> {
@@ -42,6 +42,7 @@ pub struct Renderer<T> {
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
     uniform_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>>,
+    pub latest_swapchain_image_index: usize,
 }
 
 impl Renderer<Surface<Window>> {
@@ -92,7 +93,8 @@ impl Renderer<Surface<Window>> {
             pipeline: None,
             vertex_shader: None,
             fragment_shader: None,
-            uniform_buffers: None
+            uniform_buffers: None,
+            latest_swapchain_image_index: 0
         }
     }
 
@@ -239,7 +241,7 @@ impl Renderer<Surface<Window>> {
                         self.init_frames()
                     }
                     RendererEvent::EntityAdded(entity) => {
-                        self.buffer_manager.register_entity_to_buffer(entity)
+                        self.buffer_manager.register_entity_to_buffer(entity, self.latest_swapchain_image_index)
                     }
                 }
             }
@@ -247,7 +249,7 @@ impl Renderer<Surface<Window>> {
         }
     }
 
-    //has to be called, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
+    //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
     pub fn init_frames(&mut self) {
         let mut temp_frames = Vec::new();
         //if self.pipeline.is_none() { self.create_pipeline() }
@@ -259,7 +261,8 @@ impl Renderer<Surface<Window>> {
                 self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
                 self.buffer_manager.vertex_buffer.clone(), 
-                self.get_uniform_buffer_descriptor_set(swapchain_image_index)
+                self.get_vp_matrix_buffer_descriptor_set(swapchain_image_index),
+                self.buffer_manager.get_transform_buffer_descriptor_set(self.pipeline.as_ref().unwrap().clone(), swapchain_image_index)
             );
             temp_frame.init();
             temp_frames.push(temp_frame);
@@ -267,7 +270,7 @@ impl Renderer<Surface<Window>> {
         self.frames = temp_frames;
     }
 
-    pub fn get_uniform_buffer_descriptor_set(& self, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+    pub fn get_vp_matrix_buffer_descriptor_set(& self, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
         let binding = self.pipeline.as_ref().unwrap().clone();
         let layout = binding.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(

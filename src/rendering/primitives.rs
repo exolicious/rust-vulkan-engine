@@ -3,7 +3,7 @@ use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, Deref
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 
-use crate::{physics::physics_traits::{Transform, Movable}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
+use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
 
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
@@ -88,6 +88,12 @@ impl Cube {
 }
 
 impl RenderableEntity for Cube {}
+
+impl HasTransform for Cube {
+    fn get_transform(&self) -> &Transform {
+        &self.transform
+    }
+}
 
 impl Entity for Cube {
     fn get_id(&self) -> &String {

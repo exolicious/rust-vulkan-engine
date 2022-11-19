@@ -1,7 +1,7 @@
 use bytemuck::Pod;
 use std::{sync::Arc};
 use vulkano::buffer::CpuAccessibleBuffer;
-use crate::engine::general_traits::Entity;
+use crate::{engine::general_traits::Entity, physics::physics_traits::HasTransform};
 
 use super::primitives::{Triangle, Mesh};
 
@@ -19,6 +19,6 @@ pub trait UpdateGraphics : Entity {
 }
 
 
-pub trait RenderableEntity : Entity + UpdateGraphics + HasMesh {}
+pub trait RenderableEntity : Entity + UpdateGraphics + HasMesh + HasTransform {}
 
 pub type MatrixBufferData = [[f32;4];4];

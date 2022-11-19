@@ -15,13 +15,14 @@ pub struct Frame {
     pipeline: Arc<GraphicsPipeline>, 
     vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>,
+    transform_buffer_descriptor_set: Arc<PersistentDescriptorSet>,
     framebuffer: Option<Arc<Framebuffer>>,
     pub command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>
 }
 
 impl Frame {
     pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>, device: Arc<Device>, active_queue_family_index: u32, pipeline: Arc<GraphicsPipeline>, 
-        vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
+        vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, uniform_buffer_descriptor_set: Arc<PersistentDescriptorSet>, transform_buffer_descriptor_set: Arc<PersistentDescriptorSet>) -> Self {
         Self {
             swapchain_image,
             render_pass,
@@ -30,6 +31,7 @@ impl Frame {
             pipeline,
             vertex_buffer,
             uniform_buffer_descriptor_set,
+            transform_buffer_descriptor_set,
             framebuffer: None,
             command_buffer: None,
         }
@@ -76,6 +78,12 @@ impl Frame {
                 self.pipeline.layout().clone(),
                 0,
                 self.uniform_buffer_descriptor_set.clone(),
+            )
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                self.pipeline.layout().clone(),
+                0,
+                self.transform_buffer_descriptor_set.clone(),
             )
             .draw(32, 1, 0, 0)
             .unwrap()

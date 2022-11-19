@@ -1,4 +1,4 @@
-use cgmath::{Vector3, Quaternion};
+use cgmath::{Vector3, Vector4, Quaternion, Matrix4};
 
 #[derive(Debug, Clone)]
 pub struct Transform {
@@ -25,6 +25,16 @@ impl Default for Transform {
     }
 }
 
+impl Into<[[f32; 4];4]> for &Transform {
+    fn into(self) -> [[f32; 4]; 4] {
+        Matrix4::from_cols(
+            Vector4 {x: self.position.x, y: self.position.y, z: self.position.z, w: 0.}, 
+            Vector4 {x: self.rotation.v.x, y: self.rotation.v.y, z: self.rotation.v.z, w: self.rotation.s}, 
+            Vector4 {x: self.scale.x, y: self.scale.y, z: self.scale.z, w: 0.}, 
+            Vector4 { x: 0., y: 0., z: 0., w: 0. }).into()
+    }
+}
+
 pub trait Movable {
     fn update_position(&mut self) -> ();
     fn on_move(&mut self) -> ();
@@ -32,4 +42,8 @@ pub trait Movable {
     fn move_x(&mut self, amount: f32) -> ();
     fn move_y(&mut self, amount: f32) -> ();
     fn move_z(&mut self, amount: f32) -> ();
+}
+
+pub trait HasTransform {
+    fn get_transform(&self) -> &Transform;
 }
