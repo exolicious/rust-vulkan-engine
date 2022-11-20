@@ -1,6 +1,9 @@
 use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::Hasher};
 
+use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
+
+use crate::camera::camera::Camera;
 
 use super::{rendering_traits::{HasMesh, RenderableEntity}, primitives::{Vertex, Mesh}};
 
@@ -8,7 +11,7 @@ pub struct EntityTransformAccessor {
     pub index: usize,
 }
 
-struct BlueprintAccessor {
+pub struct BlueprintAccessor {
     pub mesh_hash: u64,
     pub first_index: usize,
     pub entity_counter: usize,
@@ -27,36 +30,59 @@ const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(4) as usize; // 32 instan
 
 pub struct BufferManager {
     /*     renderer_device:  Arc<Device>, */
-    blueprint_accessors: Vec<BlueprintAccessor>,
+    pub blueprint_accessors: Vec<BlueprintAccessor>,
     entity_id_transform_accessor_map: HashMap<String, EntityTransformAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
     pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
+    pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
+    vp_camera_buffers: Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
     needs_reallocation: bool
 }
 
 impl BufferManager {
     pub fn new(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Self {
-
+        
         let vertex_buffer = Self::initialize_vertex_buffer(renderer_device.clone());
-        let transform_buffers = Self::initialize_transform_buffers(renderer_device, swapchain_images_length);
-
+        let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), swapchain_images_length);
+        let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
         let entity_id_transform_accessor_map = HashMap::new();
 /*         let entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>> = HashMap::new(); */
         let blueprint_accessors = Vec::new();
+
+
         Self {
             /* renderer_device, */
             entity_id_transform_accessor_map,
             blueprint_accessors,
             vertex_buffer,
             transform_buffers,
+            vp_camera_buffers,
             /* entity_transform_buffer_entries, */
             needs_reallocation: false
         }
     }
+
+    fn initialize_vp_camera_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
+        let mut vp_matrix_buffers = Vec::new();
+        let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
+        for _ in 0..swapchain_images_length {
+            let uniform_buffer: Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>> = CpuAccessibleBuffer::from_data(
+                renderer_device.clone(),
+                BufferUsage {
+                    uniform_buffer: true,
+                    ..Default::default()
+                },
+                false,
+                projection_view_matrix.into(),
+            )
+            .unwrap();
+            vp_matrix_buffers.push(uniform_buffer);
+        }
+        vp_matrix_buffers
+    }
     
     fn initialize_vertex_buffer(renderer_device: Arc<Device>) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
-        let initializer_data: Vec<Vertex> = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
+        let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
         CpuAccessibleBuffer::from_iter(
             renderer_device,
             BufferUsage {
@@ -69,18 +95,18 @@ impl BufferManager {
         .unwrap()
     }
 
-    fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
+    fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
-            let data = vec![[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
-            let uniform_buffer = CpuAccessibleBuffer::from_iter(
+            let transform_initial_data: Matrix4<f32> = Matrix4::identity();
+            let uniform_buffer: Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>> = CpuAccessibleBuffer::from_data(
                 renderer_device.clone(),
                 BufferUsage {
                     uniform_buffer: true,
                     ..Default::default()
                 },
                 false,
-                data,
+                transform_initial_data.into(),
             )
             .unwrap();
             transform_buffers.push(uniform_buffer);
@@ -143,17 +169,34 @@ impl BufferManager {
         match self.transform_buffers[swapchain_image_index].write() {
             Err(_) => println!("Error"),
             Ok(mut write_lock) => { 
-                write_lock[entity_transform_accessor.index] = entity.get_transform().into();
+                *write_lock = entity.get_transform().into();
             }
         };
-    }   
+    }
 
-    pub fn get_transform_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let binding = pipeline.clone();
-        let layout = binding.layout().set_layouts().get(0).unwrap();
+    pub fn copy_vp_camera_data(& self, swapchain_image_index: usize, camera: Arc<Camera>) {
+        match self.vp_camera_buffers[swapchain_image_index].write() {
+            Err(_) => println!("Error"),
+            Ok(mut write_lock) => { 
+                *write_lock = camera.projection_view_matrix.into();
+            }
+        };
+    }
+
+    pub fn get_vp_matrix_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+        let layout = pipeline.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
             layout.clone(),
-            [WriteDescriptorSet::buffer(1, Arc::new(self.transform_buffers[swapchain_image_index].clone()))],
+            [WriteDescriptorSet::buffer(0, Arc::new(self.vp_camera_buffers[swapchain_image_index].clone()))], // 0 is the binding
+        )
+        .unwrap()
+    }
+
+    pub fn get_transform_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+        let layout = pipeline.layout().set_layouts().get(1).unwrap();
+        PersistentDescriptorSet::new(
+            layout.clone(),
+            [WriteDescriptorSet::buffer(0, Arc::new(self.transform_buffers[swapchain_image_index].clone()))],
         )
         .unwrap()
     }
@@ -171,5 +214,4 @@ impl BufferManager {
         hasher.write(&result);
         hasher.finish()
     }
-    
 }

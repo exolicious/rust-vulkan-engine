@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::{sync::Arc, cell::RefCell};
 
 use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, SwapchainAcquireFuture, PresentFuture, PresentInfo}, 
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
@@ -14,7 +14,7 @@ use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::{rendering_traits::{UniformBufferOwner, HasMesh, RenderableEntity}, buffer_manager::BufferManager};
+use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager};
 
 pub enum RendererEvent {
     WindowResized,
@@ -36,12 +36,11 @@ pub struct Renderer<T> {
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
     frames: Vec<Frame>,
-    pub buffer_manager: BufferManager,
+    pub buffer_manager: Arc<RefCell<BufferManager>>,
     pub camera: Option<Camera>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
-    uniform_buffers: Option<Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>>,
     pub latest_swapchain_image_index: usize,
 }
 
@@ -70,7 +69,7 @@ impl Renderer<Surface<Window>> {
         
         let render_pass = Self::create_render_pass(device.clone(), swapchain.clone());
 
-        let buffer_manager = BufferManager::new(device.clone(), swapchain_images.len());
+        let buffer_manager = Arc::new(RefCell::new(BufferManager::new(device.clone(), swapchain_images.len())));
         
         let event_queue = Vec::new();
         let frames = Vec::new();
@@ -93,7 +92,6 @@ impl Renderer<Surface<Window>> {
             pipeline: None,
             vertex_shader: None,
             fragment_shader: None,
-            uniform_buffers: None,
             latest_swapchain_image_index: 0
         }
     }
@@ -105,7 +103,6 @@ impl Renderer<Surface<Window>> {
     pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> () {
         self.vertex_shader = Some(vertex_shader);
         self.fragment_shader = Some(fragment_shader);
-        self.uniform_buffers = Some(self.camera.as_ref().unwrap().get_uniform_buffers());
         self.init_pipeline();
         self.init_frames();
     }
@@ -223,29 +220,20 @@ impl Renderer<Surface<Window>> {
         self.pipeline = Some(pipeline);
     }
 
-    pub fn receive_event(&mut self, event: RendererEvent) {
-        self.event_queue.push(event)
-    }
-
-    pub fn work_off_queue(&mut self) {
-        match self.event_queue.pop() {
-            Some(event) => {
-                match event {
-                    RendererEvent::WindowResized => {
-                        self.recreate_swapchain_and_framebuffers();
-                        self.init_pipeline();
-                        self.init_frames()
-                    }
-                    RendererEvent::RecreateSwapchain => {
-                        self.recreate_swapchain_and_framebuffers();
-                        self.init_frames()
-                    }
-                    RendererEvent::EntityAdded(entity) => {
-                        self.buffer_manager.register_entity_to_buffer(entity, self.latest_swapchain_image_index)
-                    }
-                }
+    pub fn receive_event(&mut self, event: RendererEvent) -> () {
+        match event {
+            RendererEvent::WindowResized => {
+                self.recreate_swapchain_and_framebuffers();
+                self.init_pipeline();
+                self.init_frames()
             }
-            None => ()
+            RendererEvent::RecreateSwapchain => {
+                self.recreate_swapchain_and_framebuffers();
+                self.init_frames()
+            }
+            RendererEvent::EntityAdded(entity) => {
+                self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index)
+            }
         }
     }
 
@@ -260,24 +248,15 @@ impl Renderer<Surface<Window>> {
                 self.device.clone(), 
                 self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
-                self.buffer_manager.vertex_buffer.clone(), 
-                self.get_vp_matrix_buffer_descriptor_set(swapchain_image_index),
-                self.buffer_manager.get_transform_buffer_descriptor_set(self.pipeline.as_ref().unwrap().clone(), swapchain_image_index)
+
+                self.buffer_manager.clone(),
+                swapchain_image_index
             );
+            
             temp_frame.init();
             temp_frames.push(temp_frame);
         }
         self.frames = temp_frames;
-    }
-
-    pub fn get_vp_matrix_buffer_descriptor_set(& self, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let binding = self.pipeline.as_ref().unwrap().clone();
-        let layout = binding.layout().set_layouts().get(0).unwrap();
-        PersistentDescriptorSet::new(
-            layout.clone(),
-            [WriteDescriptorSet::buffer(0, Arc::new(self.uniform_buffers.as_ref().unwrap()[swapchain_image_index].clone()))], // 0 is the binding
-        )
-        .unwrap()
     }
 
     pub fn recreate_swapchain_and_framebuffers(&mut self) -> () {

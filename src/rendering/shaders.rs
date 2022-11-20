@@ -7,16 +7,19 @@ mod vertex_shader {
         ty: "vertex",
         src: "
             #version 450
-            layout(binding = 0) uniform UniformBufferObject {
+
+            layout(location = 0) in vec3 position;
+
+            layout(set = 0, binding = 0) uniform UniformBufferObject {
                 mat4 u_view_projection_matrix;
             } ubo;
 
-            layout(binding = 1) uniform TransformBufferObject {
+            layout(set = 1, binding = 0) uniform TransformBufferObject {
                 mat4 u_transform_matrix;
             } tbo;
             
             void main() {
-                gl_Position = ubo.u_view_projection_matrix * tbo.u_transform_matrix[0];
+                gl_Position = ubo.u_view_projection_matrix * vec4(position, 0.0) * tbo.u_transform_matrix[0];
             }",
     }
 }

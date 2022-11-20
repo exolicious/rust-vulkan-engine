@@ -9,7 +9,6 @@ use crate::camera::camera::Camera;
 use crate::physics::physics_traits::{Movable, Transform};
 use crate::rendering::entities::Entities;
 use crate::rendering::renderer::RendererEvent;
-use crate::rendering::rendering_traits::UpdateGraphics;
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders, rendering_traits::{HasMesh}, buffer_manager::{BufferManager}};
 
 pub struct Engine {
@@ -37,8 +36,6 @@ impl Engine {
     }
 
     pub fn update_graphics(&mut self) -> () {
-        self.renderer.work_off_queue();
-        self.renderer.camera.as_mut().unwrap().update_graphics(self.latest_swapchain_image_index);
         self.renderer.latest_swapchain_image_index = self.latest_swapchain_image_index;
         for entity in &self.entities.entities {
             entity.update_graphics(self.latest_swapchain_image_index);
@@ -49,10 +46,10 @@ impl Engine {
         self.renderer.camera.as_mut().unwrap().update_position();
     }
 
-    pub fn add_cube_to_scene(&mut self, origin: Option<Vector3<f32>>){
+    pub fn add_cube_to_scene(&mut self, origin: Option<Vector3<f32>>) -> () {
         match origin {
             Some(origin ) => {
-                let cube = Arc::new(Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform { position: origin, ..Default::default()}));
+                let cube = Arc::new(Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform { translation: origin, ..Default::default()}));
                 self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
                 self.entities.push(cube);
             }

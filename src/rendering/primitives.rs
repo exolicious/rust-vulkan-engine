@@ -135,15 +135,15 @@ impl Movable for Cube {
         self.on_move();
     }
     fn move_x(&mut self, amount: f32) -> () {
-        self.transform.position.x += amount;
+        self.transform.translation.x += amount;
         self.on_move();
     }
     fn move_y(&mut self, amount: f32) -> () {
-        self.transform.position.y += amount;
+        self.transform.translation.y += amount;
         self.on_move();
     }
     fn move_z(&mut self, amount: f32) -> () {
-        self.transform.position.z += amount;
+        self.transform.translation.z += amount;
         self.on_move();
     }
 }

@@ -5,10 +5,6 @@ use crate::{engine::general_traits::Entity, physics::physics_traits::HasTransfor
 
 use super::primitives::{Triangle, Mesh};
 
-pub trait UniformBufferOwner<T: Pod + Send + Sync> {
-    fn get_uniform_buffers(& self) -> Vec<Arc<CpuAccessibleBuffer<T>>>;
-}
-
 pub trait HasMesh : Entity  {
     fn get_triangles(& self) -> Vec<Triangle>;
     fn generate_mesh(& self) -> Mesh;
