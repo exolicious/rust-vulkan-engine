@@ -32,7 +32,7 @@ impl WindowManager {
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
 
-        self.event_loop.run_return(move |event, _, control_flow| match event {
+        self.event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -57,7 +57,7 @@ impl WindowManager {
                     match input.state {
                         winit::event::ElementState::Pressed => {
                             println!("added cube");
-                            self.engine.add_cube_to_scene(Some(Vector3{x: 0.3, y: 0.3, z:0.2}));
+                            self.engine.add_cube_to_scene(Some(Vector3{x: -0.3, y: -0.3, z:0.}));
                         }
                         _ => ()
                     }

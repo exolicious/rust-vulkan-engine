@@ -1,10 +1,6 @@
-use std::{sync::Arc};
-
-use crate::{physics::physics_traits::{Transform, Movable}, rendering::rendering_traits::{UpdateGraphics, HasMesh, RenderableEntity, MatrixBufferData}, rendering::{renderer::Renderer}, engine::general_traits::Entity};
+use crate::{physics::physics_traits::{Transform, Movable}, engine::general_traits::Entity};
 
 use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, swapchain::Surface};
-use winit::window::Window;
 
 use nanoid::nanoid;
 
@@ -18,28 +14,27 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(renderer: &Renderer<Surface<Window>>) -> Self {
-        let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
-
-        let transform = Transform { ..Default::default() };
-        let projection_matrix = perspective(Deg{0: 55.}, 16./9. , 1., 40.);
+    pub fn new() -> Self {
+        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() };
+        let projection_matrix = perspective(Deg{ 0: 55.}, 16./9. , 1., 4000.);
 
         let translation_matrix = Matrix4::from_translation(transform.translation);
-        let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg {0: transform.rotation.s});
-        
+        println!("translation amtrix : {:?}", translation_matrix);
+        let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg { 0: transform.rotation.s });
+        println!("orientation amtrix : {:?}", orientation_matrix);
         let view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
-        let projection_view_matrix = projection_matrix * view_matrix;
-       
+        let projection_view_matrix =  view_matrix * projection_matrix;
+        println!("projection_view_matrix amtrix : {:?}", projection_view_matrix);
         Self {
             transform: transform,
             projection_matrix: projection_matrix,
             view_matrix: view_matrix,
-            projection_view_matrix: projection_view_matrix,
+            projection_view_matrix,
             id: nanoid!()
         }
     }
 
-    fn recalculate_projection_view_matrix(&mut self) -> () {
+    pub fn recalculate_projection_view_matrix(&mut self) -> () {
         let translation_matrix = Matrix4::from_translation(self.transform.translation);
         let orientation_matrix = Matrix4::from_axis_angle(self.transform.rotation.v.normalize(), Deg {0: self.transform.rotation.s});
 

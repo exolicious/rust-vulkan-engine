@@ -1,4 +1,4 @@
-use cgmath::{Vector3, Vector4, Quaternion, Matrix4};
+use cgmath::{Vector3, Quaternion, Matrix4, Deg};
 
 #[derive(Debug, Clone)]
 pub struct Transform {
@@ -8,32 +8,32 @@ pub struct Transform {
 }
 
 impl Transform {
-    pub fn new() -> Self {
+    pub fn new(translation: Vector3<f32>, rotation: Quaternion<f32>, scale: Vector3<f32>,) -> Self {
         Self {
-            ..Default::default()
+            translation,
+            rotation,
+            scale
         }
+    }
+
+    pub fn model_matrix(&self) -> [[f32; 4]; 4] {
+        let rotation_matrix = Matrix4::from_axis_angle(self.rotation.v, Deg {0: self.rotation.s});
+        let scale_matrix = Matrix4::from_scale(1.);
+        let translation_matrix = Matrix4::from_translation(self.translation);
+        (translation_matrix * rotation_matrix * scale_matrix).into()
     }
 }
 
 impl Default for Transform {
     fn default() -> Self {
         Self {
-            translation: Vector3 {x: 0., y: 0., z: 2. },
+            translation: Vector3 {x: 0., y: 0., z: 0. },
             rotation: Quaternion {v: Vector3 {x: 0., y: 0., z: 1.}, s: 0.},
             scale: Vector3 {x: 1., y: 1., z: 1.},
         }
     }
 }
 
-impl Into<[[f32; 4];4]> for &Transform {
-    fn into(self) -> [[f32; 4]; 4] {
-        Matrix4::from_cols(
-            Vector4 {x: self.translation.x, y: self.translation.y, z: self.translation.z, w: 0.}, 
-            Vector4 {x: self.rotation.v.x, y: self.rotation.v.y, z: self.rotation.v.z, w: self.rotation.s}, 
-            Vector4 {x: self.scale.x, y: self.scale.y, z: self.scale.z, w: 0.}, 
-            Vector4 { x: 0., y: 0., z: 0., w: 0. }).into()
-    }
-}
 
 pub trait Movable {
     fn update_position(&mut self) -> ();

@@ -60,6 +60,7 @@ impl Renderer<Surface<Window>> {
         //this is just hard coded since we want this to only work with devices that support swapchains
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
+            khr_shader_non_semantic_info: true,
             ..DeviceExtensions::empty()
         };
        
@@ -103,6 +104,9 @@ impl Renderer<Surface<Window>> {
     pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> () {
         self.vertex_shader = Some(vertex_shader);
         self.fragment_shader = Some(fragment_shader);
+        
+        self.buffer_manager.borrow().copy_vp_camera_data(0, self.camera.as_ref().unwrap());
+        self.buffer_manager.borrow().copy_vp_camera_data(1, self.camera.as_ref().unwrap());
         self.init_pipeline();
         self.init_frames();
     }
@@ -141,6 +145,7 @@ impl Renderer<Surface<Window>> {
         let device_create_info = DeviceCreateInfo {
             queue_create_infos: vec![queue_create_info],
             enabled_extensions: device_extensions, // new
+            
             ..Default::default()
         };
         let (device, mut queues) = Device::new(
@@ -223,16 +228,20 @@ impl Renderer<Surface<Window>> {
     pub fn receive_event(&mut self, event: RendererEvent) -> () {
         match event {
             RendererEvent::WindowResized => {
+                println!("Received WindowResized event");
                 self.recreate_swapchain_and_framebuffers();
                 self.init_pipeline();
-                self.init_frames()
+                self.init_frames();
             }
             RendererEvent::RecreateSwapchain => {
+                println!("Received RecreateSwapchain event");
                 self.recreate_swapchain_and_framebuffers();
-                self.init_frames()
+                self.init_frames();
             }
             RendererEvent::EntityAdded(entity) => {
-                self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index)
+                println!("Received EntityAdded event");
+                self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index);
+                self.init_frames();
             }
         }
     }
@@ -240,7 +249,6 @@ impl Renderer<Surface<Window>> {
     //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
     pub fn init_frames(&mut self) {
         let mut temp_frames = Vec::new();
-        //if self.pipeline.is_none() { self.create_pipeline() }
         for (swapchain_image_index, swapchain_image) in self.swapchain_images.iter().enumerate() {
             let mut temp_frame = Frame::new(
                 swapchain_image.clone(), 
@@ -248,11 +256,9 @@ impl Renderer<Surface<Window>> {
                 self.device.clone(), 
                 self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
-
                 self.buffer_manager.clone(),
                 swapchain_image_index
             );
-            
             temp_frame.init();
             temp_frames.push(temp_frame);
         }

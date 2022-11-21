@@ -2,10 +2,10 @@ use std::{sync::Arc, cell::RefCell};
 
 use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, 
     command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, 
-    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline}, buffer::{CpuAccessibleBuffer, TypedBufferAccess}, descriptor_set::{PersistentDescriptorSet, DescriptorSetsCollection}};
+    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline}};
 use winit::window::Window;
 
-use super::{primitives::Vertex, buffer_manager::BufferManager};
+use super::{buffer_manager::BufferManager};
 
 pub struct Frame {
     swapchain_image: Arc<SwapchainImage<Window>>,
@@ -53,15 +53,26 @@ impl Frame {
     }
 
     pub fn init_command_buffer(&mut self) -> () {
+        println!("Blueprint accessors len: {:?}", self.buffer_manager.borrow().blueprint_accessors.len());
+
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             self.device.clone(),
             self.active_queue_family_index,
             CommandBufferUsage::MultipleSubmit,
-        )
+        ) 
         .unwrap();
+
         let mut descriptor_sets = Vec::new();
         descriptor_sets.push(self.buffer_manager.borrow().get_vp_matrix_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
         descriptor_sets.push(self.buffer_manager.borrow().get_transform_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
+        
+        let vertex_buffer = self.buffer_manager.borrow().vertex_buffer.clone();
+        
+      /*   match vertex_buffer.read() {
+            Ok(read_lock) => println!("{:?}",read_lock),
+            Err(_) => ()
+        } */
+
         let builder = command_buffer_builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -72,19 +83,22 @@ impl Frame {
             )
             .unwrap()
             .bind_pipeline_graphics(self.pipeline.clone())
-            .bind_vertex_buffers(0, self.buffer_manager.borrow().vertex_buffer.clone())
+            .bind_vertex_buffers(0, vertex_buffer)
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 self.pipeline.layout().clone(),
                 0,
                 descriptor_sets,
             );
+
             if self.buffer_manager.borrow().blueprint_accessors.len() > 0 {
-                for blueprint_accessor in &self.buffer_manager.borrow().blueprint_accessors {
+                let builder = self.buffer_manager.borrow().blueprint_accessors.iter().fold(builder, |builder, blueprint_accessor| {
+                    println!("entity count : {}", self.buffer_manager.borrow().blueprint_accessors[0].instance_count);
+                    println!("Vertex count : {}", self.buffer_manager.borrow().blueprint_accessors[0].vertex_count);
                     builder
-                        .draw(blueprint_accessor.vertex_count.try_into().unwrap(), blueprint_accessor.entity_counter.try_into().unwrap(), 0, 0)
-                        .unwrap();
-                }
+                        .draw(blueprint_accessor.vertex_count.try_into().unwrap(), blueprint_accessor.instance_count.try_into().unwrap(), 0, 0)
+                        .unwrap()
+                });
                 builder
                 .end_render_pass()
                 .unwrap();
@@ -96,12 +110,8 @@ impl Frame {
                 .end_render_pass()
                 .unwrap();
             }
-        
+
         let command_buffer = Arc::new(command_buffer_builder.build().unwrap());
         self.command_buffer = Some(command_buffer);
-    }
-
-    pub fn add_vertex_buffer(&mut self) {
-        self.init_command_buffer();
     }
 }

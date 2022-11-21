@@ -19,7 +19,7 @@ mod vertex_shader {
             } tbo;
             
             void main() {
-                gl_Position = ubo.u_view_projection_matrix * vec4(position, 0.0) * tbo.u_transform_matrix[0];
+                gl_Position = ubo.u_view_projection_matrix * tbo.u_transform_matrix[0] * vec4(position, 1.0);
             }",
     }
 }
