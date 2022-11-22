@@ -50,12 +50,12 @@ impl Engine {
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
         match translation {
             Some(translation) => {
-                let cube = Arc::new(Cube::new(Vector3{x: 0.2, y: 0.3, z: 0.2}, Transform { translation, ..Default::default()}));
+                let cube = Arc::new(Cube::new(Vector3{ x: 0.2, y: 0.3, z: 0.2 }, Transform { translation, ..Default::default()}));
                 self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
                 self.entities.push(cube);
             }
             None => {
-                let cube = Arc::new(Cube::new(Vector3{x: 0.25, y: 0.25, z: 0.25}, Transform {translation: Vector3 { x: 0., y: 0., z: -5. }, ..Default::default()}));
+                let cube = Arc::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: -5. }, ..Default::default() }));
                 self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
                 self.entities.push(cube);
             }
