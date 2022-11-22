@@ -53,8 +53,6 @@ impl Frame {
     }
 
     pub fn init_command_buffer(&mut self) -> () {
-        println!("Blueprint accessors len: {:?}", self.buffer_manager.borrow().blueprint_accessors.len());
-
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             self.device.clone(),
             self.active_queue_family_index,

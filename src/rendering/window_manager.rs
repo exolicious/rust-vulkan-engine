@@ -57,7 +57,7 @@ impl WindowManager {
                     match input.state {
                         winit::event::ElementState::Pressed => {
                             println!("added cube");
-                            self.engine.add_cube_to_scene(Some(Vector3{x: -0.3, y: -0.3, z:0.}));
+                            self.engine.add_cube_to_scene(Some(Vector3{ x: 3., y: 3., z: -5. }));
                         }
                         _ => ()
                     }

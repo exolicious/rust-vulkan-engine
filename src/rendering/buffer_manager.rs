@@ -71,7 +71,7 @@ impl BufferManager {
                     ..Default::default()
                 },
                 false,
-                [[1.0805525, 0.0, 0.0, 0.0], [0.0, 1.9209821, 0.0, 0.0], [0.0, 0.0, -1.0005001, -1.0], [0.0, 0.0, 98.04951, 100.0]],
+                projection_view_matrix.into(),
             )
             .unwrap();
             vp_matrix_buffers.push(uniform_buffer);
@@ -115,7 +115,9 @@ impl BufferManager {
     pub fn register_entity_to_buffer(&mut self, entity: Arc<dyn RenderableEntity>, swapchain_image_index: usize) -> () {
         let mesh = entity.generate_mesh(); // this is stupid
         let mesh_hash = self.get_mesh_hash(&mesh); // this is stupid, but can be useful later on, when the flow will be; check if mesh exists with the filepath entry of the model, if not load the mesh, etc.
+        println!("hash: {}", mesh_hash);
         let blueprint_accessors_length = self.blueprint_accessors.len();
+        
         let entity_transform_accessor = match blueprint_accessors_length > 0 {
             true => {
                 match self.blueprint_accessors.iter_mut().find(|accessor| accessor.mesh_hash == mesh_hash) {
@@ -192,12 +194,6 @@ impl BufferManager {
     }
 
     pub fn get_vp_matrix_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        
-        /* match self.vp_camera_buffers[swapchain_image_index].read() {
-            Ok(read_lock) =>  println!("VP Buffer Contents: {:?}", read_lock),
-            _ => ()
-        } */
-
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
             layout.clone(),
@@ -207,10 +203,6 @@ impl BufferManager {
     }
 
     pub fn get_transform_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        /* match self.vp_camera_buffers[swapchain_image_index].read() {
-            Ok(read_lock) =>  println!("Transform Buffer Contents: {:?}", read_lock),
-            _ => ()
-        } */
         let layout = pipeline.layout().set_layouts().get(1).unwrap();
         PersistentDescriptorSet::new(
             layout.clone(),

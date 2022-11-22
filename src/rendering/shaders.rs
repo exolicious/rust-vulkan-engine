@@ -6,20 +6,20 @@ mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: "
-            #version 450
+            #version 460
 
             layout(location = 0) in vec3 position;
 
             layout(set = 0, binding = 0) uniform UniformBufferObject {
-                mat4 u_view_projection_matrix;
+                mat4 u_projection_view_matrix;
             } ubo;
 
             layout(set = 1, binding = 0) uniform TransformBufferObject {
-                mat4 u_transform_matrix;
+                mat4 u_transform_matrix[1000000000];
             } tbo;
             
             void main() {
-                gl_Position = ubo.u_view_projection_matrix * tbo.u_transform_matrix * vec4(position, 1.0);
+                gl_Position = ubo.u_projection_view_matrix * tbo.u_transform_matrix[gl_InstanceIndex] * vec4(position, 1.0);
             }",
     }
 }

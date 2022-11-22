@@ -15,7 +15,7 @@ pub struct Camera {
 
 impl Camera {
     pub fn new() -> Self {
-        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: 10. }, ..Default::default() };
+        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: 2. }, ..Default::default() };
         let projection_matrix = perspective(Deg{ 0: 55.}, 16./9. , 1., 4000.);
 
         let translation_matrix = Matrix4::from_translation(transform.translation);

@@ -55,7 +55,7 @@ impl Engine {
                 self.entities.push(cube);
             }
             None => {
-                let cube = Arc::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: -5. }, ..Default::default() }));
+                let cube = Arc::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
                 self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
                 self.entities.push(cube);
             }
