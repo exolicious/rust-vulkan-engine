@@ -64,7 +64,7 @@ impl Frame {
         descriptor_sets.push(self.buffer_manager.borrow().get_vp_matrix_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
         descriptor_sets.push(self.buffer_manager.borrow().get_transform_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
         
-        let vertex_buffer = self.buffer_manager.borrow().vertex_buffer.clone();
+        let vertex_buffer = self.buffer_manager.borrow().vertex_buffers[self.swapchain_image_index].clone();
         
       /*   match vertex_buffer.read() {
             Ok(read_lock) => println!("{:?}",read_lock),

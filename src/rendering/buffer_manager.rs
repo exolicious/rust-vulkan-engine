@@ -1,10 +1,7 @@
 use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::Hasher};
-
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
-
-use crate::{camera::camera::Camera, physics::physics_traits::Transform};
-
+use crate::{camera::camera::Camera, physics::physics_traits::Transform, rendering::renderer::RendererEvent};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 
 pub struct EntityTransformAccessor {
@@ -33,30 +30,31 @@ pub struct BufferManager {
     pub blueprint_accessors: Vec<BlueprintAccessor>,
     entity_id_transform_accessor_map: HashMap<String, EntityTransformAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
-    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    pub vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
     vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
-    needs_reallocation: bool
+    needs_reallocation: bool,
+    ahead_buffers_index: Option<usize>
 }
 
 impl BufferManager {
     pub fn new(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Self {
-        let vertex_buffer = Self::initialize_vertex_buffer(renderer_device.clone());
+        let vertex_buffers = Self::initialize_vertex_buffers(renderer_device.clone(), swapchain_images_length);
         let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), swapchain_images_length);
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
         let entity_id_transform_accessor_map = HashMap::new();
-/*         let entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>> = HashMap::new(); */
         let blueprint_accessors = Vec::new();
 
         Self {
             /* renderer_device, */
             entity_id_transform_accessor_map,
             blueprint_accessors,
-            vertex_buffer,
+            vertex_buffers,
             transform_buffers,
             vp_camera_buffers,
             /* entity_transform_buffer_entries, */
-            needs_reallocation: false
+            needs_reallocation: false,
+            ahead_buffers_index: None
         }
     }
 
@@ -79,18 +77,23 @@ impl BufferManager {
         vp_matrix_buffers
     }
     
-    fn initialize_vertex_buffer(renderer_device: Arc<Device>) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
-        let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
-        CpuAccessibleBuffer::from_iter(
-            renderer_device,
-            BufferUsage {
-                vertex_buffer: true,
-                ..Default::default()
-            },
-            false,
-            initializer_data.into_iter()
-        )
-        .unwrap()
+    fn initialize_vertex_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
+        let mut vertex_buffers = Vec::new();
+        for _ in 0..swapchain_images_length {
+            let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
+            let vertex_buffer = CpuAccessibleBuffer::from_iter(
+                renderer_device.clone(),
+                BufferUsage {
+                    vertex_buffer: true,
+                    ..Default::default()
+                },
+                false,
+                initializer_data.into_iter()
+            )
+            .unwrap();
+            vertex_buffers.push(vertex_buffer);
+        }
+        vertex_buffers
     }
 
     fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
@@ -115,7 +118,6 @@ impl BufferManager {
     pub fn register_entity_to_buffer(&mut self, entity: Arc<dyn RenderableEntity>, swapchain_image_index: usize) -> () {
         let mesh = entity.generate_mesh(); // this is stupid
         let mesh_hash = self.get_mesh_hash(&mesh); // this is stupid, but can be useful later on, when the flow will be; check if mesh exists with the filepath entry of the model, if not load the mesh, etc.
-        println!("hash: {}", mesh_hash);
         let blueprint_accessors_length = self.blueprint_accessors.len();
         
         let entity_transform_accessor = match blueprint_accessors_length > 0 {
@@ -124,6 +126,7 @@ impl BufferManager {
                     Some(existing_blueprint_accessor) => {
                         let entity_transform_accessor = EntityTransformAccessor {index: existing_blueprint_accessor.instance_count /* * size of the data held in the uniform buffer */};
                         existing_blueprint_accessor.instance_count += 1;
+                        
                         entity_transform_accessor
                     }
                     None => {
@@ -131,9 +134,9 @@ impl BufferManager {
                         let previous_accessor_last_index = previous_accessor.first_index + previous_accessor.vertex_count * previous_accessor.instance_count;
                         let mut blueprint_accessor = BlueprintAccessor { mesh_hash, first_index: previous_accessor_last_index, vertex_count: mesh.vertex_count, instance_count: 0, last_index: previous_accessor_last_index + mesh.vertex_count};
                         let entity_transform_accessor = EntityTransformAccessor {index: blueprint_accessor.instance_count};
-                            blueprint_accessor.instance_count += 1;
+                        blueprint_accessor.instance_count += 1;
 
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data);
+                        self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data, swapchain_image_index);
                         self.blueprint_accessors.push(blueprint_accessor);
                         
                         entity_transform_accessor
@@ -145,21 +148,23 @@ impl BufferManager {
                 let entity_transform_accessor = EntityTransformAccessor {index: blueprint_accessor.instance_count /* * size of the data held in the uniform buffer */};
                     blueprint_accessor.instance_count += 1;
 
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data);
+                self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data, swapchain_image_index);
                 self.blueprint_accessors.push(blueprint_accessor);
 
                 entity_transform_accessor
             }
         };
         
-        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), 0);
-        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), 1);
+        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), swapchain_image_index);
         self.entity_id_transform_accessor_map.entry(entity.get_id().to_string()).or_insert(entity_transform_accessor);
+
+        self.ahead_buffers_index = Some(swapchain_image_index);
     }
 
-    fn copy_blueprint_mesh_data_to_vertex_buffer(&mut self, blueprint_accessor: &BlueprintAccessor, mesh_data: Vec<Vertex>) {
-        match self.vertex_buffer.write() {
-            Err(_) => println!("Error"),
+    fn copy_blueprint_mesh_data_to_vertex_buffer(&mut self, blueprint_accessor: &BlueprintAccessor, mesh_data: Vec<Vertex>, swapchain_image_index: usize) {
+        let main_vertex_buffer = self.vertex_buffers[swapchain_image_index].clone();
+        match main_vertex_buffer.write() {
+            Err(_) => println!("Error writing onto"),
             Ok(mut write_lock) => { 
                 println!("Vertex buffer has been filled with mesh data");
                 write_lock[blueprint_accessor.first_index..blueprint_accessor.last_index].copy_from_slice(&mesh_data.as_slice());
@@ -173,9 +178,8 @@ impl BufferManager {
     }
 
     fn copy_transform_data_to_buffer(&mut self, index: usize, transform: &Transform, swapchain_image_index: usize) {
-        println!("{}", index);
         match self.transform_buffers[swapchain_image_index].write() {
-            Err(_) => println!("Error"),
+            Err(_) => println!("Error writing onto transform buffer"),
             Ok(mut write_lock) => { 
                 write_lock[index] = transform.model_matrix();
                 println!("Wrote this transform {:?} to the transform buffer", transform.model_matrix());
@@ -185,7 +189,7 @@ impl BufferManager {
 
     pub fn copy_vp_camera_data(& self, swapchain_image_index: usize, camera: &Camera) {
         match self.vp_camera_buffers[swapchain_image_index].write() {
-            Err(_) => println!("Error"),
+            Err(_) => println!("Error writing onto the vp camera buffer"),
             Ok(mut write_lock) => { 
                 println!("Wrote into vp camera buffer: {:?}", camera.projection_view_matrix);
                 *write_lock = camera.projection_view_matrix.into();

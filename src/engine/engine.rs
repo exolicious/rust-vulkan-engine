@@ -37,7 +37,7 @@ impl Engine {
     }
 
     pub fn update_graphics(&mut self) -> () {
-        self.renderer.latest_swapchain_image_index = self.latest_swapchain_image_index;
+        self.renderer.work_off_queue();
         for entity in &self.entities.entities {
             entity.update_graphics(self.latest_swapchain_image_index);
         }

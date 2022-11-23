@@ -19,7 +19,8 @@ use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager}
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded(Arc<dyn RenderableEntity>)
+    EntityAdded(Arc<dyn RenderableEntity>),
+    SynchBuffers(usize)
 }
 
 pub struct Renderer<T> {
@@ -225,6 +226,19 @@ impl Renderer<Surface<Window>> {
         self.pipeline = Some(pipeline);
     }
 
+    pub fn work_off_queue(&mut self) {
+        for _ in 0..self.event_queue.len() {
+            match self.event_queue.pop() {
+                Some(RendererEvent::EntityAdded(entity)) => {
+                    println!("Received EntityAdded event");
+                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index);
+                    self.init_frames();
+                }
+                _ => ()
+            }
+        }
+    }
+
     pub fn receive_event(&mut self, event: RendererEvent) -> () {
         match event {
             RendererEvent::WindowResized => {
@@ -238,12 +252,9 @@ impl Renderer<Surface<Window>> {
                 self.recreate_swapchain_and_framebuffers();
                 self.init_frames();
             }
-            RendererEvent::EntityAdded(entity) => {
-                println!("Received EntityAdded event");
-                self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index);
-                self.init_frames();
-            }
+            _ => self.event_queue.push(event) 
         }
+        
     }
 
     //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
