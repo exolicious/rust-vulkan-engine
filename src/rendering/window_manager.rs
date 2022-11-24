@@ -83,7 +83,7 @@ impl WindowManager {
                 if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
                     self.engine.update_graphics();
-                    self.engine.renderer.latest_swapchain_image_index = swapchain_image_index;
+                    self.engine.renderer.next_swapchain_image_index = swapchain_image_index;
                 } 
 
                 let previous_future = match fences[previous_fence_i].clone() {

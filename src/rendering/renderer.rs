@@ -42,7 +42,7 @@ pub struct Renderer<T> {
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
     fragment_shader: Option<Arc<ShaderModule>>,
-    pub latest_swapchain_image_index: usize,
+    pub next_swapchain_image_index: usize,
 }
 
 impl Renderer<Surface<Window>> {
@@ -94,7 +94,7 @@ impl Renderer<Surface<Window>> {
             pipeline: None,
             vertex_shader: None,
             fragment_shader: None,
-            latest_swapchain_image_index: 0
+            next_swapchain_image_index: 0
         }
     }
 
@@ -231,8 +231,16 @@ impl Renderer<Surface<Window>> {
             match self.event_queue.pop() {
                 Some(RendererEvent::EntityAdded(entity)) => {
                     println!("Received EntityAdded event");
-                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.latest_swapchain_image_index);
-                    self.init_frames();
+                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.next_swapchain_image_index, &mut self.event_queue);
+                    self.init_command_buffers();
+                    self.receive_event(RendererEvent::SynchBuffers(self.next_swapchain_image_index))
+                }
+                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index)) => {
+                    if most_up_to_date_buffer_index != self.next_swapchain_image_index { //if this is not equal, there is still synching to be done, until they are equal
+                        self.buffer_manager.borrow_mut().sync_vertex_buffers(most_up_to_date_buffer_index, self.next_swapchain_image_index);
+                        self.init_command_buffers();
+                        self.receive_event(RendererEvent::SynchBuffers(self.next_swapchain_image_index))
+                    } 
                 }
                 _ => ()
             }
@@ -258,7 +266,7 @@ impl Renderer<Surface<Window>> {
     }
 
     //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
-    pub fn init_frames(&mut self) {
+    fn init_frames(&mut self) {
         let mut temp_frames = Vec::new();
         for (swapchain_image_index, swapchain_image) in self.swapchain_images.iter().enumerate() {
             let mut temp_frame = Frame::new(
@@ -274,6 +282,12 @@ impl Renderer<Surface<Window>> {
             temp_frames.push(temp_frame);
         }
         self.frames = temp_frames;
+    }
+
+    fn init_command_buffers(&mut self) {
+        for frame in self.frames.iter_mut() {
+            frame.init_command_buffer();
+        }
     }
 
     pub fn recreate_swapchain_and_framebuffers(&mut self) -> () {

@@ -14,7 +14,7 @@ use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders}
 pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
     entities: Entities,
-    pub latest_swapchain_image_index: usize,
+    pub next_swapchain_image_index: usize,
 }
 
 impl Engine {
@@ -32,14 +32,14 @@ impl Engine {
         Self {
             renderer,
             entities,
-            latest_swapchain_image_index: 0,
+            next_swapchain_image_index: 0,
         }
     }
 
     pub fn update_graphics(&mut self) -> () {
         self.renderer.work_off_queue();
         for entity in &self.entities.entities {
-            entity.update_graphics(self.latest_swapchain_image_index);
+            entity.update_graphics(self.next_swapchain_image_index);
         }
     }
 
