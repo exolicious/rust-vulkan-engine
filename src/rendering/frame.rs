@@ -2,48 +2,43 @@ use std::{sync::Arc, cell::RefCell};
 
 use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, 
     command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, 
-    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline}};
+    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline, graphics::render_pass}};
 use winit::window::Window;
 
 use super::{buffer_manager::BufferManager};
 
 pub struct Frame {
     swapchain_image: Arc<SwapchainImage<Window>>,
-    render_pass: Arc<RenderPass>,
     device: Arc<Device>, 
-    active_queue_family_index: u32, 
     swapchain_image_index: usize,
     pipeline: Arc<GraphicsPipeline>, 
     framebuffer: Option<Arc<Framebuffer>>,
-    pub command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
+    pub draw_command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
     buffer_manager: Arc<RefCell<BufferManager>>
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, render_pass: Arc<RenderPass>, device: Arc<Device>, active_queue_family_index: u32, 
-            pipeline: Arc<GraphicsPipeline>, buffer_manager: Arc<RefCell<BufferManager>>, swapchain_image_index: usize) -> Self {
+    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, buffer_manager: Arc<RefCell<BufferManager>>, swapchain_image_index: usize) -> Self {
         Self {
             swapchain_image,    
-            render_pass,
             device,
-            active_queue_family_index,
             swapchain_image_index,
             pipeline,
             buffer_manager,
             framebuffer: None,
-            command_buffer: None,
+            draw_command_buffer: None,
         }
     }
 
-    pub fn init(&mut self) {
-        self.init_framebuffer();
-        self.init_command_buffer();
+    pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32) {
+        self.init_framebuffer(render_pass);
+        self.init_draw_command_buffer(active_queue_family_index);
     }
 
-    fn init_framebuffer(&mut self) -> () {
+    fn init_framebuffer(&mut self, render_pass: Arc<RenderPass>) -> () {
         let view = ImageView::new_default(self.swapchain_image.clone()).unwrap();
         let framebuffer = Framebuffer::new(
-            self.render_pass.clone(),
+            render_pass,
             FramebufferCreateInfo {
                 attachments: vec![view],
                 ..Default::default()
@@ -52,10 +47,10 @@ impl Frame {
         self.framebuffer = Some(framebuffer);
     }
 
-    pub fn init_command_buffer(&mut self) -> () {
+    pub fn init_draw_command_buffer(&mut self, active_queue_family_index: u32) -> () {
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             self.device.clone(),
-            self.active_queue_family_index,
+            active_queue_family_index,
             CommandBufferUsage::MultipleSubmit,
         ) 
         .unwrap();
@@ -110,6 +105,6 @@ impl Frame {
             }
 
         let command_buffer = Arc::new(command_buffer_builder.build().unwrap());
-        self.command_buffer = Some(command_buffer);
+        self.draw_command_buffer = Some(command_buffer);
     }
 }

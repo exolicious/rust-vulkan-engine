@@ -16,11 +16,16 @@ use crate::rendering::frame::Frame;
 
 use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager};
 
+pub enum EventResolveTiming {
+    Immediate(RendererEvent),
+    NextImage(RendererEvent)
+}
+
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
     EntityAdded(Arc<dyn RenderableEntity>),
-    SynchBuffers(usize)
+    SynchBuffers(usize, Arc<dyn RenderableEntity>)
 }
 
 pub struct Renderer<T> {
@@ -225,44 +230,54 @@ impl Renderer<Surface<Window>> {
             .unwrap();
         self.pipeline = Some(pipeline);
     }
-
-    pub fn work_off_queue(&mut self) {
-        for _ in 0..self.event_queue.len() {
+    
+    pub fn receive_event(&mut self, event_timing: EventResolveTiming) -> () {
+        match event_timing {
+            EventResolveTiming::Immediate(event) => {
+                match event {
+                    RendererEvent::WindowResized => self.window_resized_event_handler(),
+                    RendererEvent::RecreateSwapchain => self.recreate_swapchain_event_handler(),
+                    RendererEvent::EntityAdded(_) => todo!(),
+                    RendererEvent::SynchBuffers(_, _) => todo!(),
+                }  
+            },
+            EventResolveTiming::NextImage(event) => self.event_queue.push(event)
+        }
+    }
+    
+    pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
+        let len = self.event_queue.len();
+        for _ in 0..len {
             match self.event_queue.pop() {
                 Some(RendererEvent::EntityAdded(entity)) => {
-                    println!("Received EntityAdded event");
-                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity, self.next_swapchain_image_index, &mut self.event_queue);
+                    println!("Entity added in frame index: {}", acquired_swapchain_index);
+                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity.clone(), acquired_swapchain_index);
                     self.init_command_buffers();
-                    self.receive_event(RendererEvent::SynchBuffers(self.next_swapchain_image_index))
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity.clone())));
+                    println!("Worked off EntityAdded event");
                 }
-                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index)) => {
-                    if most_up_to_date_buffer_index != self.next_swapchain_image_index { //if this is not equal, there is still synching to be done, until they are equal
-                        self.buffer_manager.borrow_mut().sync_vertex_buffers(most_up_to_date_buffer_index, self.next_swapchain_image_index);
-                        self.init_command_buffers();
-                        self.receive_event(RendererEvent::SynchBuffers(self.next_swapchain_image_index))
-                    } 
+                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => {
+                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
+                    self.buffer_manager.borrow_mut().sync_buffers(entity.clone(), acquired_swapchain_index);
+                    self.init_command_buffers();
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity.clone())));
+                    println!("Worked off buffer sync event");
                 }
                 _ => ()
             }
         }
     }
 
-    pub fn receive_event(&mut self, event: RendererEvent) -> () {
-        match event {
-            RendererEvent::WindowResized => {
-                println!("Received WindowResized event");
-                self.recreate_swapchain_and_framebuffers();
-                self.init_pipeline();
-                self.init_frames();
-            }
-            RendererEvent::RecreateSwapchain => {
-                println!("Received RecreateSwapchain event");
-                self.recreate_swapchain_and_framebuffers();
-                self.init_frames();
-            }
-            _ => self.event_queue.push(event) 
-        }
-        
+    fn recreate_swapchain_event_handler(&mut self) -> () {
+        self.recreate_swapchain_and_framebuffers();
+        self.init_frames();
+    }
+
+    fn window_resized_event_handler(&mut self) -> ()  {
+        self.recreate_swapchain_and_framebuffers();
+        self.init_pipeline();
+        self.init_frames();
     }
 
     //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
@@ -271,14 +286,12 @@ impl Renderer<Surface<Window>> {
         for (swapchain_image_index, swapchain_image) in self.swapchain_images.iter().enumerate() {
             let mut temp_frame = Frame::new(
                 swapchain_image.clone(), 
-                self.render_pass.clone(), 
                 self.device.clone(), 
-                self.active_queue.queue_family_index(), 
                 self.pipeline.as_ref().unwrap().clone(), 
                 self.buffer_manager.clone(),
                 swapchain_image_index
             );
-            temp_frame.init();
+            temp_frame.init(self.render_pass.clone(), self.active_queue.queue_family_index());
             temp_frames.push(temp_frame);
         }
         self.frames = temp_frames;
@@ -286,7 +299,7 @@ impl Renderer<Surface<Window>> {
 
     fn init_command_buffers(&mut self) {
         for frame in self.frames.iter_mut() {
-            frame.init_command_buffer();
+            frame.init_draw_command_buffer(self.active_queue.queue_family_index());
         }
     }
 
@@ -311,15 +324,17 @@ impl Renderer<Surface<Window>> {
         self.render_pass = Self::create_render_pass(self.device.clone(), self.swapchain.clone());
     }
 
-    pub fn get_future(& self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, image_i: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
+    pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
+        self.work_off_queue(acquired_swapchain_index);
+        
         previous_future
             .join(acquire_future)
-            .then_execute(self.active_queue.clone(), self.frames[image_i].command_buffer.as_ref().unwrap().clone())
+            .then_execute(self.active_queue.clone(), self.frames[acquired_swapchain_index].draw_command_buffer.as_ref().unwrap().clone())
             .unwrap()
             .then_swapchain_present(
                 self.active_queue.clone(),
                 PresentInfo {
-                    index: image_i,
+                    index: acquired_swapchain_index,
                     ..PresentInfo::swapchain(self.swapchain.clone())
                 },
             )

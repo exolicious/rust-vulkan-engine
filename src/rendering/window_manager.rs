@@ -6,7 +6,7 @@ use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, p
 
 use crate::engine::engine::Engine;
 
-use super::renderer::RendererEvent;
+use super::renderer::{RendererEvent, EventResolveTiming};
  
 pub struct WindowManager {
     pub engine: Engine,
@@ -43,7 +43,7 @@ impl WindowManager {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                self.engine.renderer.receive_event(RendererEvent::WindowResized);
+                self.engine.renderer.receive_event(EventResolveTiming::Immediate(RendererEvent::WindowResized));
             }
             Event::WindowEvent {
                 event: WindowEvent::KeyboardInput { device_id, input, is_synthetic },
@@ -69,20 +69,19 @@ impl WindowManager {
                     match swapchain::acquire_next_image(self.engine.renderer.swapchain.clone(), None) {
                         Ok(r) => r,
                         Err(AcquireError::OutOfDate) => {
-                            self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
+                            self.engine.renderer.receive_event(EventResolveTiming::Immediate(RendererEvent::RecreateSwapchain));
                             return;
                         }
                         Err(e) => panic!("Failed to acquire next image: {:?}", e),
                     };
 
                 if suboptimal {
-                    self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
+                    self.engine.renderer.receive_event(EventResolveTiming::Immediate(RendererEvent::RecreateSwapchain));
                 }
 
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
                 if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
-                    self.engine.update_graphics();
                     self.engine.renderer.next_swapchain_image_index = swapchain_image_index;
                 } 
 
@@ -102,7 +101,7 @@ impl WindowManager {
                         Some(Arc::new(value))
                     }
                     Err(FlushError::OutOfDate) => {
-                        self.engine.renderer.receive_event(RendererEvent::RecreateSwapchain);
+                        self.engine.renderer.receive_event(EventResolveTiming::Immediate(RendererEvent::RecreateSwapchain));
                         None
                     }
                     Err(e) => {

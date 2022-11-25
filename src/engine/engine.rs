@@ -8,7 +8,7 @@ use winit::window::Window;
 use crate::camera::camera::Camera;
 use crate::physics::physics_traits::{Movable, Transform};
 use crate::rendering::entities::Entities;
-use crate::rendering::renderer::RendererEvent;
+use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
 
 pub struct Engine {
@@ -37,7 +37,7 @@ impl Engine {
     }
 
     pub fn update_graphics(&mut self) -> () {
-        self.renderer.work_off_queue();
+        //self.renderer.work_off_queue();
         for entity in &self.entities.entities {
             entity.update_graphics(self.next_swapchain_image_index);
         }
@@ -51,12 +51,12 @@ impl Engine {
         match translation {
             Some(translation) => {
                 let cube = Arc::new(Cube::new(Vector3{ x: 0.2, y: 0.3, z: 0.2 }, Transform { translation, ..Default::default()}));
-                self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
+                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
                 self.entities.push(cube);
             }
             None => {
                 let cube = Arc::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
-                self.renderer.receive_event(RendererEvent::EntityAdded(cube.clone()));
+                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
                 self.entities.push(cube);
             }
         };

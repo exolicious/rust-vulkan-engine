@@ -70,6 +70,7 @@ impl Triangle {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Cube {
     pub bounds: Vector3<f32>, 
     transform: Transform,
