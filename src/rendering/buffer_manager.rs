@@ -175,6 +175,7 @@ impl BufferManager {
 
         self.ahead_buffers_index = Some(next_swapchain_image_index);
     }
+    
 
     fn copy_blueprint_mesh_data_to_vertex_buffer(&self, blueprint_accessor: &BlueprintAccessor, mesh_data: Vec<Vertex>, next_swapchain_image_index: usize) {
         let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
