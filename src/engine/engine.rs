@@ -9,6 +9,7 @@ use crate::camera::camera::Camera;
 use crate::physics::physics_traits::{Movable, Transform};
 use crate::rendering::entities::Entities;
 use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
+use crate::rendering::rendering_traits::HasMesh;
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
 
 pub struct Engine {
@@ -50,14 +51,18 @@ impl Engine {
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
         match translation {
             Some(translation) => {
-                let cube = Arc::new(Cube::new(Vector3{ x: 0.2, y: 0.3, z: 0.2 }, Transform { translation, ..Default::default()}));
-                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
-                self.entities.push(cube);
+                let mut cube = Cube::new(Vector3{ x: 0.2, y: 0.3, z: 0.2 }, Transform { translation, ..Default::default()});
+                cube.set_mesh();
+                let wrapped_cube = Arc::new(cube);
+                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(wrapped_cube.clone())));
+                self.entities.push(wrapped_cube);
             }
             None => {
-                let cube = Arc::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
-                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
-                self.entities.push(cube);
+                let mut cube = Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() });
+                cube.set_mesh();
+                let wrapped_cube = Arc::new(cube);
+                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(wrapped_cube.clone())));
+                self.entities.push(wrapped_cube);
             }
         };
     }

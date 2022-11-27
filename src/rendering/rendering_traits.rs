@@ -3,8 +3,9 @@ use crate::{engine::general_traits::Entity, physics::physics_traits::HasTransfor
 use super::primitives::{Triangle, Mesh};
 
 pub trait HasMesh : Entity  {
-    fn get_triangles(& self) -> Vec<Triangle>;
-    fn generate_mesh(& self) -> Mesh;
+    fn set_mesh(&mut self) -> ();
+    fn get_data(& self) -> Vec<Triangle>;
+    fn get_mesh(& self) -> &Mesh;
 }
 
 pub trait UpdateGraphics : Entity {

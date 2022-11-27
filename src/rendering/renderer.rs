@@ -251,7 +251,7 @@ impl Renderer<Surface<Window>> {
             match self.event_queue.pop() {
                 Some(RendererEvent::EntityAdded(entity)) => {
                     println!("Entity added in frame index: {}", acquired_swapchain_index);
-                    self.buffer_manager.borrow_mut().register_entity_to_buffer(entity.clone(), acquired_swapchain_index);
+                    self.buffer_manager.borrow_mut().receive_entity(entity.clone(), acquired_swapchain_index);
                     self.init_command_buffers();
                     self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity.clone())));
                     println!("Worked off EntityAdded event");

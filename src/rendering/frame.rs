@@ -84,12 +84,11 @@ impl Frame {
                 descriptor_sets,
             );
 
-            if self.buffer_manager.borrow().blueprint_accessors.len() > 0 {
-                let builder = self.buffer_manager.borrow().blueprint_accessors.iter().fold(builder, |builder, blueprint_accessor| {
-                    println!("entity count : {}", self.buffer_manager.borrow().blueprint_accessors[0].instance_count);
-                    println!("Vertex count : {}", self.buffer_manager.borrow().blueprint_accessors[0].vertex_count);
+            if self.buffer_manager.borrow().mesh_accessors.len() > 0 {
+                let builder = self.buffer_manager.borrow().mesh_accessors.iter().fold(builder, |builder, mesh_accessor| {
+                    println!("instance count: {}, first index: {}, last index: {}", mesh_accessor.instance_count, mesh_accessor.first_index, mesh_accessor.last_index);
                     builder
-                        .draw(blueprint_accessor.vertex_count.try_into().unwrap(), blueprint_accessor.instance_count.try_into().unwrap(), 0, 0)
+                        .draw(mesh_accessor.vertex_count.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
                         .unwrap()
                 });
                 builder

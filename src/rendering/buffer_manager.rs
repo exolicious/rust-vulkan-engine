@@ -1,24 +1,57 @@
-use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::Hasher};
+use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::{Hasher, Hash}};
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
 use crate::{camera::camera::Camera, physics::physics_traits::Transform, rendering::renderer::RendererEvent};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 
-pub struct EntityTransformAccessor {
-    pub index: usize,
+pub struct EntityTransformBufferIndexMap {
+    pub count: usize,
+    pub entity_id_transform_accessor_map: HashMap<String, usize>,
 }
 
-pub struct BlueprintAccessor {
+impl EntityTransformBufferIndexMap {
+    pub fn new() -> Self {
+        Self {
+            count: 0,
+            entity_id_transform_accessor_map: HashMap::new()
+        }
+    }
+
+    pub fn add_entity(&mut self, entity_id: String) -> () {
+        self.entity_id_transform_accessor_map.insert(entity_id, self.count);
+        self.count += 1;
+    }
+
+    pub fn get_transform_buffer_index(&self, entity_id: String) -> usize {
+        self.entity_id_transform_accessor_map[&entity_id]
+    }
+}
+
+pub struct MeshAccessor {
     pub mesh_hash: u64,
     pub first_index: usize,
+    pub first_instance: usize,
     pub instance_count: usize,
     pub vertex_count: usize,
-    pub last_index: usize
+    pub last_index: usize,
 }
 
-impl Default for BlueprintAccessor {
+impl MeshAccessor {
+    pub fn add_entity(&mut self) {
+        self.instance_count += 1;
+    }
+}
+
+impl Default for MeshAccessor {
     fn default() -> Self {
-        Self {mesh_hash: Default::default(), first_index: Default::default(), instance_count: Default::default(), vertex_count: Default::default(), last_index: Default::default()}
+        Self {
+           mesh_hash: 0,
+           first_index: 0,
+           first_instance: 0,
+           instance_count: 0,
+           vertex_count: 0,
+           last_index: 0
+        }
     }
 }
 
@@ -27,12 +60,12 @@ const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(4) as usize; // 32 instan
 
 pub struct BufferManager {
     /*     renderer_device:  Arc<Device>, */
-    pub blueprint_accessors: Vec<BlueprintAccessor>,
-    entity_id_transform_accessor_map: HashMap<String, EntityTransformAccessor>,
+    pub mesh_accessors: Vec<MeshAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
     pub vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
     vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
+    entity_transform_buffer_index_map: EntityTransformBufferIndexMap,
     needs_reallocation: bool,
     ahead_buffers_index: Option<usize>
 }
@@ -42,16 +75,15 @@ impl BufferManager {
         let vertex_buffers = Self::initialize_vertex_buffers(renderer_device.clone(), swapchain_images_length);
         let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), swapchain_images_length);
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
-        let entity_id_transform_accessor_map = HashMap::new();
-        let blueprint_accessors = Vec::new();
-
+        let mesh_accessors = Vec::new();
+        let entity_transform_buffer_index_map = EntityTransformBufferIndexMap::new();
         Self {
             /* renderer_device, */
-            entity_id_transform_accessor_map,
-            blueprint_accessors,
+            mesh_accessors,
             vertex_buffers,
             transform_buffers,
             vp_camera_buffers,
+            entity_transform_buffer_index_map,
             /* entity_transform_buffer_entries, */
             needs_reallocation: false,
             ahead_buffers_index: None
@@ -116,89 +148,86 @@ impl BufferManager {
     }
 
     pub fn sync_buffers(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) -> () {
-        let mesh = entity.generate_mesh(); // this is stupid
-        let mesh_hash = self.get_mesh_hash(&mesh); // this is stupid, but can be useful later on, when the flow will be; check if mesh exists with the filepath entry of the model, if not load the mesh, etc.
-        match self.blueprint_accessors.iter().find(|accessor| accessor.mesh_hash == mesh_hash) {
-            Some(existing_blueprint_accessor) => {
-                let entity_transform_accessor = &self.entity_id_transform_accessor_map[entity.get_id()]; /* * size of the data held in the uniform buffer */
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_blueprint_accessor, mesh.data, next_swapchain_image_index);
-                self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), next_swapchain_image_index);
+        let mesh = entity.get_mesh();
+        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == mesh.hash) {
+            Some(existing_mesh_accessor) => {
+                self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &mesh.data, next_swapchain_image_index);
+                self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
             }
             _ => (),
         };
     }
 
-    pub fn register_entity_to_buffer(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) -> () {
-        let mesh = entity.generate_mesh(); // this is stupid
-        let mesh_hash = self.get_mesh_hash(&mesh); // this is stupid, but can be useful later on, when the flow will be; check if mesh exists with the filepath entry of the model, if not load the mesh, etc.
-        let blueprint_accessors_length = self.blueprint_accessors.len();
-        
-        let entity_transform_accessor = match blueprint_accessors_length > 0 {
-            true => {
-                match self.blueprint_accessors.iter_mut().find(|accessor| accessor.mesh_hash == mesh_hash) {
-                    Some(existing_blueprint_accessor) => {
-                        let entity_transform_accessor = EntityTransformAccessor {index: existing_blueprint_accessor.instance_count /* * size of the data held in the uniform buffer */};
-                        existing_blueprint_accessor.instance_count += 1;
-                        
-                        entity_transform_accessor
-                    }
-                    None => {
-                        let previous_accessor = self.blueprint_accessors.iter().last().unwrap();
-                        let previous_accessor_last_index = previous_accessor.first_index + previous_accessor.vertex_count * previous_accessor.instance_count;
-                        let mut blueprint_accessor = BlueprintAccessor { mesh_hash, first_index: previous_accessor_last_index, vertex_count: mesh.vertex_count, instance_count: 0, last_index: previous_accessor_last_index + mesh.vertex_count};
-                        let entity_transform_accessor = EntityTransformAccessor {index: blueprint_accessor.instance_count};
-                        blueprint_accessor.instance_count += 1;
+    pub fn receive_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) -> () {
+        let mesh = entity.get_mesh(); 
 
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data, next_swapchain_image_index);
-            
-                        self.blueprint_accessors.push(blueprint_accessor);
-                        
-                        entity_transform_accessor
+        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == mesh.hash) {
+            Some(existing_mesh_accessor) => {
+                existing_mesh_accessor.add_entity();
+            }
+            None => {
+                match self.mesh_accessors.iter().last() {
+                    Some(previous_accessor) => {
+                        let mut mesh_acessor = MeshAccessor {
+                            mesh_hash: mesh.hash, 
+                            first_index: previous_accessor.last_index, 
+                            vertex_count: mesh.vertex_count, 
+                            last_index: previous_accessor.last_index + mesh.vertex_count,
+                            first_instance: previous_accessor.first_instance + previous_accessor.instance_count,
+                            ..Default::default()
+                        };
+                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &mesh.data, next_swapchain_image_index);
+                        mesh_acessor.add_entity();
+                        self.mesh_accessors.push(mesh_acessor);
+                    }
+                    None =>  {
+                        let mut mesh_acessor = MeshAccessor { 
+                            mesh_hash: mesh.hash, 
+                            vertex_count: mesh.vertex_count, 
+                            last_index: mesh.vertex_count,
+                            ..Default::default()
+                        };
+                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &mesh.data, next_swapchain_image_index);
+                        mesh_acessor.add_entity();
+                        self.mesh_accessors.push(mesh_acessor);
                     }
                 }
             }
-            false => {
-                let mut blueprint_accessor = BlueprintAccessor { mesh_hash, first_index: 0, vertex_count: mesh.vertex_count, instance_count: 0, last_index: mesh.vertex_count};
-                let entity_transform_accessor = EntityTransformAccessor { index: blueprint_accessor.instance_count /* * size of the data held in the uniform buffer */};
-                    blueprint_accessor.instance_count += 1;
-
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&blueprint_accessor, mesh.data, next_swapchain_image_index);
-
-                self.blueprint_accessors.push(blueprint_accessor);
-
-                entity_transform_accessor
-            }
-        };
-        
-        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), next_swapchain_image_index);
-        self.entity_id_transform_accessor_map.entry(entity.get_id().to_string()).or_insert(entity_transform_accessor);
-
+        }
+        let id = entity.get_id();
+        println!("id: {}", id);
+        self.entity_transform_buffer_index_map.add_entity(entity.get_id().to_string());
+        self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
         self.ahead_buffers_index = Some(next_swapchain_image_index);
     }
     
 
-    fn copy_blueprint_mesh_data_to_vertex_buffer(&self, blueprint_accessor: &BlueprintAccessor, mesh_data: Vec<Vertex>, next_swapchain_image_index: usize) {
+    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_acessor: &MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) {
+        println!("first index: {} \n last index: {} ", mesh_acessor.first_index, mesh_acessor.last_index);
         let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
         match main_vertex_buffer.write() {
             Err(_) => println!("Error writing onto mesh buffer"),
             Ok(mut write_lock) => { 
                 println!("Vertex buffer with index [{}] has been filled with mesh data", next_swapchain_image_index);
-                write_lock[blueprint_accessor.first_index..blueprint_accessor.last_index].copy_from_slice(&mesh_data.as_slice());
+                write_lock[mesh_acessor.first_index..mesh_acessor.last_index].copy_from_slice(&mesh_data.as_slice());
             }
         };
     }
 
-    pub fn update_transform_buffer_for_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
+   /*  pub fn update_transform_buffer_for_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
         let entity_transform_accessor = self.entity_id_transform_accessor_map.get(entity.get_id()).expect("somehow entity id is not registered in the transform accessors map inside the buffer manager");
         self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), next_swapchain_image_index);
     }
-
-    fn copy_transform_data_to_buffer(& self, index: usize, transform: &Transform, next_swapchain_image_index: usize) {
+ */
+    fn copy_transform_data_to_buffer(& self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
+        let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(entity.get_id().to_string());
+        let entity_transform = entity.get_transform();
+        println!("transform index: {}", entity_transform_index);
         match self.transform_buffers[next_swapchain_image_index].write() {
             Err(_) => println!("Error writing onto transform buffer"),
             Ok(mut write_lock) => { 
-                write_lock[index] = transform.model_matrix();
-                println!("Wrote this transform {:?} to the transform buffer with index [{}] ", transform.model_matrix(), next_swapchain_image_index);
+                write_lock[entity_transform_index] = entity_transform.model_matrix();
+                println!("Wrote this transform {:?} to the transform buffer with index [{}] ", entity_transform.model_matrix(), next_swapchain_image_index);
             }
         };
     }
@@ -229,19 +258,5 @@ impl BufferManager {
             [WriteDescriptorSet::buffer(0, Arc::new(self.transform_buffers[next_swapchain_image_index].clone()))],
         )
         .unwrap()
-    }
-
-    fn get_mesh_hash(& self, mesh: &Mesh) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        
-        let mut result = Vec::new();
-        for triangle in &mesh.data {
-            for j in triangle.position {
-                let rounded_coord =  (j * 100_f32) as u8;
-                result.push(rounded_coord);
-            }
-        }
-        hasher.write(&result);
-        hasher.finish()
     }
 }

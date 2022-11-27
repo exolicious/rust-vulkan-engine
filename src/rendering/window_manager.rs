@@ -1,5 +1,5 @@
 use std::{sync::Arc};
-
+use rand::Rng;
 use cgmath::Vector3;
 use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError}};
 use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, platform::run_return::EventLoopExtRunReturn};
@@ -57,7 +57,10 @@ impl WindowManager {
                     match input.state {
                         winit::event::ElementState::Pressed => {
                             println!("added cube");
-                            self.engine.add_cube_to_scene(Some(Vector3{ x: 3., y: 3., z: -5. }));
+                            let rand_x: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+                            let rand_y: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+                            let rand_z: f32 = rand::thread_rng().gen_range(-7_f32..-2_f32);
+                            self.engine.add_cube_to_scene(Some(Vector3{ x: rand_x, y: rand_y, z: rand_z }));
                         }
                         _ => ()
                     }

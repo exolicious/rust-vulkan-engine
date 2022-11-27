@@ -35,18 +35,36 @@ impl DerefMut for Vertex {
 }
 
 
+#[derive(Debug, Clone)]
 pub struct Mesh {
     pub data: Vec<Vertex>,
-    pub vertex_count: usize
+    pub vertex_count: usize,
+    pub hash: u64
 }
 
 impl Mesh {
     pub fn new(data: Vec<Vertex>) -> Self {
         let len = data.len();
+        let hash = Self::calculate_mesh_hash(&data);
         Self {
             data,
-            vertex_count: len
+            vertex_count: len,
+            hash: hash
         }
+    }
+
+    fn calculate_mesh_hash(data: &Vec<Vertex>) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        
+        let mut result = Vec::new();
+        for triangle in data {
+            for j in triangle.position {
+                let rounded_coord =  (j * 100_f32) as u8;
+                result.push(rounded_coord);
+            }
+        }
+        hasher.write(&result);
+        hasher.finish()
     }
 }
 
@@ -74,6 +92,7 @@ impl Triangle {
 pub struct Cube {
     pub bounds: Vector3<f32>, 
     transform: Transform,
+    mesh: Option<Mesh>,
     id: String,
     //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
@@ -83,6 +102,7 @@ impl Cube {
         Self {
             bounds,
             transform,
+            mesh: None,
             id: nanoid!()
         }
     }
@@ -115,6 +135,7 @@ impl Default for Cube {
         Self {
             bounds : bounds,
             transform: Transform::default(),
+            mesh: None,
             id: nanoid!()
         }
     }
@@ -150,7 +171,17 @@ impl Movable for Cube {
 }
 
 impl HasMesh for Cube {
-    fn get_triangles(&self) -> Vec<Triangle> {
+    fn set_mesh(&mut self) -> () {
+        let mut result = Vec::new();
+        for triangle in self.get_data() {
+            for i in 0..triangle.vertices.len() {
+                result.push(triangle.vertices[i])
+            }
+        }
+        self.mesh = Some(Mesh::new(result));
+    }
+
+    fn get_data(& self) -> Vec<Triangle> {
         let mut resulting_mesh: Vec<Triangle> = Vec::new();
         let (x_bounds, y_bounds, z_bounds) = (self.bounds[0], self.bounds[1], self.bounds[2]);
 
@@ -205,15 +236,9 @@ impl HasMesh for Cube {
 
         resulting_mesh
     }
-
-    fn generate_mesh(& self) -> Mesh {
-        let mut result = Vec::new();
-        for triangle in self.get_triangles() {
-            for i in 0..triangle.vertices.len() {
-                result.push(triangle.vertices[i])
-            }
-        }
-        Mesh::new(result)
+    
+    fn get_mesh(& self) -> &Mesh {
+        self.mesh.as_ref().unwrap()
     }
 }
 
