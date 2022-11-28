@@ -60,11 +60,6 @@ impl Frame {
         descriptor_sets.push(self.buffer_manager.borrow().get_transform_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
         
         let vertex_buffer = self.buffer_manager.borrow().vertex_buffers[self.swapchain_image_index].clone();
-        
-      /*   match vertex_buffer.read() {
-            Ok(read_lock) => println!("{:?}",read_lock),
-            Err(_) => ()
-        } */
 
         let builder = command_buffer_builder
             .begin_render_pass(
@@ -102,7 +97,6 @@ impl Frame {
                 .end_render_pass()
                 .unwrap();
             }
-
         let command_buffer = Arc::new(command_buffer_builder.build().unwrap());
         self.draw_command_buffer = Some(command_buffer);
     }

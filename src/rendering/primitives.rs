@@ -120,10 +120,15 @@ impl Entity for Cube {
     fn get_id(&self) -> &String {
         &self.id
     }
+
+    fn update(&mut self) -> () {
+        let amount: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+        self.move_x(amount);
+    }
 }
 
 impl UpdateGraphics for Cube {
-    fn update_graphics(& self, swapchain_image_index: usize) -> () {
+    fn update_graphics(& self) -> () {
         return;
     }
 }
@@ -143,11 +148,8 @@ impl Default for Cube {
 
 impl Movable for Cube {
     fn update_position(&mut self) -> () {
-        self.move_x(0.3);
-    }
-
-    fn on_move(&mut self) -> () {
-        
+        let amount: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+        self.move_x(amount);
     }
 
     fn move_xyz(&mut self, amount: Vector3<f32>) -> () {
@@ -168,6 +170,7 @@ impl Movable for Cube {
         self.transform.translation.z += amount;
         self.on_move();
     }
+
 }
 
 impl HasMesh for Cube {

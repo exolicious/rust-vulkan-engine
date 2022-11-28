@@ -51,7 +51,7 @@ impl WindowManager {
             } => {
                 if input.scancode == 17 {
                     //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update();
+                    
                 }
                 if input.scancode == 57 {
                     match input.state {

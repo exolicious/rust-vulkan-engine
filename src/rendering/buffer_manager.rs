@@ -112,7 +112,7 @@ impl BufferManager {
     fn initialize_vertex_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
         let mut vertex_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
-            let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
+            let initializer_data = vec![Vertex{position: [0.,0.,0.]}];
             let vertex_buffer = CpuAccessibleBuffer::from_iter(
                 renderer_device.clone(),
                 BufferUsage {
@@ -131,7 +131,7 @@ impl BufferManager {
     fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
+            let transform_initial_data: [[[f32; 4]; 4]] = [[[0_f32; 4]; 4]];
             let uniform_buffer = CpuAccessibleBuffer::from_iter(
                 renderer_device.clone(),
                 BufferUsage {
@@ -194,8 +194,6 @@ impl BufferManager {
                 }
             }
         }
-        let id = entity.get_id();
-        println!("id: {}", id);
         self.entity_transform_buffer_index_map.add_entity(entity.get_id().to_string());
         self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
         self.ahead_buffers_index = Some(next_swapchain_image_index);
@@ -214,11 +212,10 @@ impl BufferManager {
         };
     }
 
-   /*  pub fn update_transform_buffer_for_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
-        let entity_transform_accessor = self.entity_id_transform_accessor_map.get(entity.get_id()).expect("somehow entity id is not registered in the transform accessors map inside the buffer manager");
-        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), next_swapchain_image_index);
+    pub fn update_entity_transform_buffer(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
+        self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
     }
- */
+ 
     fn copy_transform_data_to_buffer(& self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
         let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(entity.get_id().to_string());
         let entity_transform = entity.get_transform();

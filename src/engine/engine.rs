@@ -37,15 +37,13 @@ impl Engine {
         }
     }
 
-    pub fn update_graphics(&mut self) -> () {
-        //self.renderer.work_off_queue();
-        for entity in &self.entities.entities {
-            entity.update_graphics(self.next_swapchain_image_index);
-        }
-    }
-
     pub fn update(&mut self) -> () {
         self.renderer.camera.as_mut().unwrap().update_position();
+
+        for entity in &self.entities.entities {
+            entity.update();
+            self.renderer.buffer_manager.borrow().update_entity_transform_buffer(entity, self.next_swapchain_image_index);
+        }
     }
 
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
