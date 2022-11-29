@@ -2,6 +2,7 @@ use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, Deref
 
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
+use rand::Rng;
 
 use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
 
@@ -111,8 +112,8 @@ impl Cube {
 impl RenderableEntity for Cube {}
 
 impl HasTransform for Cube {
-    fn get_transform(&self) -> &Transform {
-        &self.transform
+    fn get_transform(&self) -> Transform {
+        self.transform
     }
 }
 
@@ -124,12 +125,6 @@ impl Entity for Cube {
     fn update(&mut self) -> () {
         let amount: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
         self.move_x(amount);
-    }
-}
-
-impl UpdateGraphics for Cube {
-    fn update_graphics(& self) -> () {
-        return;
     }
 }
 
@@ -169,6 +164,10 @@ impl Movable for Cube {
     fn move_z(&mut self, amount: f32) -> () {
         self.transform.translation.z += amount;
         self.on_move();
+    }
+
+    fn on_move(&mut self) -> () {
+        return
     }
 
 }
@@ -240,8 +239,8 @@ impl HasMesh for Cube {
         resulting_mesh
     }
     
-    fn get_mesh(& self) -> &Mesh {
-        self.mesh.as_ref().unwrap()
+    fn get_mesh(& self) -> Mesh {
+        self.mesh.unwrap()
     }
 }
 
