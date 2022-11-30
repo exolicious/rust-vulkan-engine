@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use cgmath::Vector3;
+use rand::Rng;
 use vulkano::swapchain::{Surface};
 use winit::event_loop::{EventLoop};
 use winit::window::Window;
@@ -54,6 +55,7 @@ impl Engine {
     }
 
     pub fn update_graphics(&mut self) -> () {
+        self.renderer.work_off_queue(self.next_swapchain_image_index);
         for entity in &self.entities {
             self.renderer.buffer_manager.borrow_mut().update_entity_transform_buffer(entity.borrow().get_id(), entity.borrow().get_transform(), self.next_swapchain_image_index);
         }
@@ -62,12 +64,16 @@ impl Engine {
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
         match translation {
             Some(translation) => {
-                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.2, y: 0.3, z: 0.2 }, Transform { translation, ..Default::default()})));
+                let rand_x: f32 = rand::thread_rng().gen_range(-0.5_f32..0.5_f32);
+                let rand_y: f32 = rand::thread_rng().gen_range(-0.5_f32..1_f32);
+                let rand_z: f32 = rand::thread_rng().gen_range(-2_f32..-0.7_f32);
+                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: rand_x, y: rand_y, z: rand_z }, Transform { translation, ..Default::default()})));
                 cube.borrow_mut().set_mesh();
                 self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
                 self.entities.push(cube);
             }
             None => {
+
                 let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() })));
                 cube.borrow_mut().set_mesh();
                 self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));

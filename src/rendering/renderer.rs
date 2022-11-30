@@ -301,8 +301,6 @@ impl Renderer<Surface<Window>> {
     }
 
     pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
-        self.work_off_queue(acquired_swapchain_index);
-        
         previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.frames[acquired_swapchain_index].draw_command_buffer.as_ref().unwrap().clone())
@@ -317,7 +315,7 @@ impl Renderer<Surface<Window>> {
             .then_signal_fence_and_flush()
     }
 
-    fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
+    pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
         let len = self.event_queue.len();
         for _ in 0..len {
             match self.event_queue.pop() {

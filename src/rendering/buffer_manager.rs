@@ -55,7 +55,7 @@ impl Default for MeshAccessor {
     }
 }
 
-const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(8) as usize; // 256, enough for 32 instances of cubes, with 8 vertices; 32*8 = 256
+const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
 const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(4) as usize; // 32 instances
 
 pub struct BufferManager {
