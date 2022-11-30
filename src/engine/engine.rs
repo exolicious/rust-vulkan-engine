@@ -46,7 +46,6 @@ impl Engine {
     }
 
     pub fn update_engine(&mut self) -> () {
-        println!("_____________UPDATE_____________");
         //self.renderer.camera.as_mut().unwrap().update_position();
 
         for entity in &self.entities {
