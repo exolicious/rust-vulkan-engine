@@ -15,7 +15,6 @@ impl Entities {
     }
 
     pub fn push(&mut self, entity: Arc<dyn RenderableEntity>) {
-
         self.entities.push(entity);
     }
 }

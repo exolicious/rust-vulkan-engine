@@ -47,6 +47,9 @@ impl Entity for Camera {
     fn get_id(&self) -> &String {
         &self.id
     }
+    fn update(self: &mut Camera) -> () {
+       return;
+    }
 }
 
 impl Movable for Camera {

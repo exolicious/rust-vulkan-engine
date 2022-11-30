@@ -26,13 +26,14 @@ impl WindowManager {
     pub fn start_engine(mut self) -> () {
         //init scene
         self.engine.add_cube_to_scene(None);
+       
 
         //start event loop
         let frames_in_flight = self.engine.renderer.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
 
-        self.event_loop.run(move |event, _, control_flow| match event {
+        self.event_loop.run_return(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -51,7 +52,7 @@ impl WindowManager {
             } => {
                 if input.scancode == 17 {
                     //todo:: here we should shoot an event up to our event/input handler who holds a reference to the currently selected controller(?)
-                    self.engine.update();
+                    
                 }
                 if input.scancode == 57 {
                     match input.state {
@@ -85,7 +86,8 @@ impl WindowManager {
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
                 if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
-                    self.engine.renderer.next_swapchain_image_index = swapchain_image_index;
+                    self.engine.next_swapchain_image_index = swapchain_image_index;
+                    self.engine.update_graphics();
                 } 
 
                 let previous_future = match fences[previous_fence_i].clone() {
@@ -96,7 +98,6 @@ impl WindowManager {
                     }
                     Some(fence) => fence.boxed(),
                 };
-
                 let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
 
                 fences[swapchain_image_index] = match future {
@@ -114,7 +115,7 @@ impl WindowManager {
                 };
                 previous_fence_i = swapchain_image_index;
             }
-            _ => (),
+            _ => self.engine.update_engine(),
         });
     }
 }

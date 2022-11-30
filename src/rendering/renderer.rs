@@ -10,11 +10,11 @@ use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCrea
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
-use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::Camera};
+use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::Camera, physics::physics_traits::Transform, engine::engine::EntityToBufferRegisterData};
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager};
+use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager, primitives::Mesh};
 
 pub enum EventResolveTiming {
     Immediate(RendererEvent),
@@ -24,8 +24,8 @@ pub enum EventResolveTiming {
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded(Arc<dyn RenderableEntity>),
-    SynchBuffers(usize, Arc<dyn RenderableEntity>)
+    EntityAdded(Arc<RefCell<dyn RenderableEntity>>),
+    SynchBuffers(usize, Arc<RefCell<dyn RenderableEntity>>)
 }
 
 pub struct Renderer<T> {
@@ -244,30 +244,6 @@ impl Renderer<Surface<Window>> {
             EventResolveTiming::NextImage(event) => self.event_queue.push(event)
         }
     }
-    
-    pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
-        let len = self.event_queue.len();
-        for _ in 0..len {
-            match self.event_queue.pop() {
-                Some(RendererEvent::EntityAdded(entity)) => {
-                    println!("Entity added in frame index: {}", acquired_swapchain_index);
-                    self.buffer_manager.borrow_mut().receive_entity(entity.clone(), acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity.clone())));
-                    println!("Worked off EntityAdded event");
-                }
-                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => {
-                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
-                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
-                    self.buffer_manager.borrow_mut().sync_buffers(entity.clone(), acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity.clone())));
-                    println!("Worked off buffer sync event");
-                }
-                _ => ()
-            }
-        }
-    }
 
     fn recreate_swapchain_event_handler(&mut self) -> () {
         self.recreate_swapchain_and_framebuffers();
@@ -325,8 +301,6 @@ impl Renderer<Surface<Window>> {
     }
 
     pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
-        self.work_off_queue(acquired_swapchain_index);
-        
         previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.frames[acquired_swapchain_index].draw_command_buffer.as_ref().unwrap().clone())
@@ -339,5 +313,29 @@ impl Renderer<Surface<Window>> {
                 },
             )
             .then_signal_fence_and_flush()
+    }
+
+    pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
+        let len = self.event_queue.len();
+        for _ in 0..len {
+            match self.event_queue.pop() {
+                Some(RendererEvent::EntityAdded(entity)) => {
+                    println!("Entity added in frame index: {}", acquired_swapchain_index);
+                    self.buffer_manager.borrow_mut().register_entity(entity.clone(), acquired_swapchain_index);
+                    self.init_command_buffers();
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity))); //set the synch event with the index that is now the most up to date (regarding buffer data)
+                    println!("Worked off EntityAdded event");
+                }
+                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => {
+                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
+                    self.buffer_manager.borrow_mut().sync_buffers(entity.clone(), acquired_swapchain_index);
+                    self.init_command_buffers();
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
+                    println!("Worked off buffer sync event");
+                }
+                _ => ()
+            }
+        }
     }
 }

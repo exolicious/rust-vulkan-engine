@@ -11,4 +11,4 @@ pub trait HasMesh : Entity  {
 pub trait UpdateGraphics : Entity {
     fn update_graphics(& self, swapchain_image_index: usize) -> ();
 }
-pub trait RenderableEntity : Entity + UpdateGraphics + HasMesh + HasTransform {}
+pub trait RenderableEntity : Entity + HasMesh + HasTransform {}

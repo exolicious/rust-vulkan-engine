@@ -1,6 +1,6 @@
 use cgmath::{Vector3, Quaternion, Matrix4, Deg};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Transform {
     pub translation: Vector3<f32>,
     pub rotation: Quaternion<f32>,

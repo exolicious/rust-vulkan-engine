@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::{Hasher, Hash}};
+use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::{Hasher, Hash}, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
 use crate::{camera::camera::Camera, physics::physics_traits::Transform, rendering::renderer::RendererEvent};
@@ -22,8 +22,8 @@ impl EntityTransformBufferIndexMap {
         self.count += 1;
     }
 
-    pub fn get_transform_buffer_index(&self, entity_id: String) -> usize {
-        self.entity_id_transform_accessor_map[&entity_id]
+    pub fn get_transform_buffer_index(&self, entity_id: &String) -> usize {
+        self.entity_id_transform_accessor_map[entity_id]
     }
 }
 
@@ -55,7 +55,7 @@ impl Default for MeshAccessor {
     }
 }
 
-const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(8) as usize; // 256, enough for 32 instances of cubes, with 8 vertices; 32*8 = 256
+const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
 const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(4) as usize; // 32 instances
 
 pub struct BufferManager {
@@ -131,7 +131,7 @@ impl BufferManager {
     fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
+            let transform_initial_data: [[[f32; 4]; 4]; 16] = [[[0_f32; 4]; 4]; 16];
             let uniform_buffer = CpuAccessibleBuffer::from_iter(
                 renderer_device.clone(),
                 BufferUsage {
@@ -147,21 +147,28 @@ impl BufferManager {
         transform_buffers
     }
 
-    pub fn sync_buffers(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) -> () {
-        let mesh = entity.get_mesh();
-        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == mesh.hash) {
+    pub fn sync_buffers(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> () {
+        let binding = entity.borrow();
+        let entity_mesh = binding.get_mesh();
+        let entity_id = binding.get_id();
+        let entity_transform = binding.get_transform();
+
+        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
             Some(existing_mesh_accessor) => {
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &mesh.data, next_swapchain_image_index);
-                self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
+                self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &entity_mesh.data, next_swapchain_image_index);
+                self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
             }
             _ => (),
         };
     }
 
-    pub fn receive_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) -> () {
-        let mesh = entity.get_mesh(); 
+    pub fn register_entity(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> () {
+        let binding = entity.borrow();
+        let entity_mesh = binding.get_mesh();
+        let entity_id = binding.get_id();
+        let entity_transform = binding.get_transform();
 
-        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == mesh.hash) {
+        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
             Some(existing_mesh_accessor) => {
                 existing_mesh_accessor.add_entity();
             }
@@ -169,35 +176,33 @@ impl BufferManager {
                 match self.mesh_accessors.iter().last() {
                     Some(previous_accessor) => {
                         let mut mesh_acessor = MeshAccessor {
-                            mesh_hash: mesh.hash, 
+                            mesh_hash: entity_mesh.hash, 
                             first_index: previous_accessor.last_index, 
-                            vertex_count: mesh.vertex_count, 
-                            last_index: previous_accessor.last_index + mesh.vertex_count,
+                            vertex_count: entity_mesh.vertex_count, 
+                            last_index: previous_accessor.last_index + entity_mesh.vertex_count,
                             first_instance: previous_accessor.first_instance + previous_accessor.instance_count,
                             ..Default::default()
                         };
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &mesh.data, next_swapchain_image_index);
+                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &entity_mesh.data, next_swapchain_image_index);
                         mesh_acessor.add_entity();
                         self.mesh_accessors.push(mesh_acessor);
                     }
                     None =>  {
                         let mut mesh_acessor = MeshAccessor { 
-                            mesh_hash: mesh.hash, 
-                            vertex_count: mesh.vertex_count, 
-                            last_index: mesh.vertex_count,
+                            mesh_hash: entity_mesh.hash, 
+                            vertex_count: entity_mesh.vertex_count, 
+                            last_index: entity_mesh.vertex_count,
                             ..Default::default()
                         };
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &mesh.data, next_swapchain_image_index);
+                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &entity_mesh.data, next_swapchain_image_index);
                         mesh_acessor.add_entity();
                         self.mesh_accessors.push(mesh_acessor);
                     }
                 }
             }
         }
-        let id = entity.get_id();
-        println!("id: {}", id);
-        self.entity_transform_buffer_index_map.add_entity(entity.get_id().to_string());
-        self.copy_transform_data_to_buffer(entity, next_swapchain_image_index);
+        self.entity_transform_buffer_index_map.add_entity(entity_id.to_string());
+        self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
         self.ahead_buffers_index = Some(next_swapchain_image_index);
     }
     
@@ -214,14 +219,12 @@ impl BufferManager {
         };
     }
 
-   /*  pub fn update_transform_buffer_for_entity(&mut self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
-        let entity_transform_accessor = self.entity_id_transform_accessor_map.get(entity.get_id()).expect("somehow entity id is not registered in the transform accessors map inside the buffer manager");
-        self.copy_transform_data_to_buffer(entity_transform_accessor.index, entity.get_transform(), next_swapchain_image_index);
+    pub fn update_entity_transform_buffer(&mut self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) {
+        self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
     }
- */
-    fn copy_transform_data_to_buffer(& self, entity: Arc<dyn RenderableEntity>, next_swapchain_image_index: usize) {
-        let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(entity.get_id().to_string());
-        let entity_transform = entity.get_transform();
+ 
+    fn copy_transform_data_to_buffer(& self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) {
+        let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(&entity_id);
         println!("transform index: {}", entity_transform_index);
         match self.transform_buffers[next_swapchain_image_index].write() {
             Err(_) => println!("Error writing onto transform buffer"),
