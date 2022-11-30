@@ -56,7 +56,7 @@ impl Default for MeshAccessor {
 }
 
 const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
-const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(4) as usize; // 32 instances
+const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(8) as usize; // 32 instances
 
 pub struct BufferManager {
     /*     renderer_device:  Arc<Device>, */
@@ -131,7 +131,7 @@ impl BufferManager {
     fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; 16] = [[[0_f32; 4]; 4]; 16];
+            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
             let uniform_buffer = CpuAccessibleBuffer::from_iter(
                 renderer_device.clone(),
                 BufferUsage {
@@ -225,12 +225,12 @@ impl BufferManager {
  
     fn copy_transform_data_to_buffer(& self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) {
         let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(&entity_id);
-        println!("transform index: {}", entity_transform_index);
+        //println!("transform index: {}", entity_transform_index);
         match self.transform_buffers[next_swapchain_image_index].write() {
             Err(_) => println!("Error writing onto transform buffer"),
             Ok(mut write_lock) => { 
                 write_lock[entity_transform_index] = entity_transform.model_matrix();
-                println!("Wrote this transform {:?} to the transform buffer with index [{}] ", entity_transform.model_matrix(), next_swapchain_image_index);
+                //println!("Wrote this transform {:?} to the transform buffer with index [{}] ", entity_transform.model_matrix(), next_swapchain_image_index);
             }
         };
     }
