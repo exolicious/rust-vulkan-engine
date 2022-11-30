@@ -5,7 +5,7 @@ use super::primitives::{Triangle, Mesh};
 pub trait HasMesh : Entity  {
     fn set_mesh(&mut self) -> ();
     fn get_data(& self) -> Vec<Triangle>;
-    fn get_mesh(& self) -> Mesh;
+    fn get_mesh(& self) -> &Mesh;
 }
 
 pub trait UpdateGraphics : Entity {

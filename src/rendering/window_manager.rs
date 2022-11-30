@@ -86,7 +86,8 @@ impl WindowManager {
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
                 if let Some(image_fence) = &fences[swapchain_image_index] {
                     image_fence.wait(None).unwrap();
-                    
+                    self.engine.next_swapchain_image_index = swapchain_image_index;
+                    self.engine.update_graphics();
                 } 
 
                 let previous_future = match fences[previous_fence_i].clone() {
@@ -97,7 +98,6 @@ impl WindowManager {
                     }
                     Some(fence) => fence.boxed(),
                 };
-
                 let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
 
                 fences[swapchain_image_index] = match future {
@@ -115,7 +115,7 @@ impl WindowManager {
                 };
                 previous_fence_i = swapchain_image_index;
             }
-            _ => (),
+            _ => self.engine.update_engine(),
         });
     }
 }

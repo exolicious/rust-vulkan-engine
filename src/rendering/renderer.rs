@@ -24,8 +24,8 @@ pub enum EventResolveTiming {
 pub enum RendererEvent {
     WindowResized,
     RecreateSwapchain,
-    EntityAdded(EntityToBufferRegisterData),
-    SynchBuffers(usize, EntityToBufferRegisterData)
+    EntityAdded(Arc<RefCell<dyn RenderableEntity>>),
+    SynchBuffers(usize, Arc<RefCell<dyn RenderableEntity>>)
 }
 
 pub struct Renderer<T> {
@@ -244,30 +244,6 @@ impl Renderer<Surface<Window>> {
             EventResolveTiming::NextImage(event) => self.event_queue.push(event)
         }
     }
-    
-    pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
-        let len = self.event_queue.len();
-        for _ in 0..len {
-            match self.event_queue.pop() {
-                Some(RendererEvent::EntityAdded(entity_buffer_register_data)) => {
-                    println!("Entity added in frame index: {}", acquired_swapchain_index);
-                    self.buffer_manager.borrow_mut().register_entity(&entity_buffer_register_data.mesh, entity_buffer_register_data.id , &entity_buffer_register_data.transform, acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity_buffer_register_data))); //set the synch event with the index that is now the most up to date (regarding buffer data)
-                    println!("Worked off EntityAdded event");
-                }
-                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity_buffer_register_data)) => {
-                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
-                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
-                    self.buffer_manager.borrow_mut().sync_buffers(&entity_buffer_register_data.mesh, entity_buffer_register_data.id , &entity_buffer_register_data.transform, acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity_buffer_register_data)));
-                    println!("Worked off buffer sync event");
-                }
-                _ => ()
-            }
-        }
-    }
 
     fn recreate_swapchain_event_handler(&mut self) -> () {
         self.recreate_swapchain_and_framebuffers();
@@ -339,5 +315,29 @@ impl Renderer<Surface<Window>> {
                 },
             )
             .then_signal_fence_and_flush()
+    }
+
+    fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
+        let len = self.event_queue.len();
+        for _ in 0..len {
+            match self.event_queue.pop() {
+                Some(RendererEvent::EntityAdded(entity)) => {
+                    println!("Entity added in frame index: {}", acquired_swapchain_index);
+                    self.buffer_manager.borrow_mut().register_entity(entity.clone(), acquired_swapchain_index);
+                    self.init_command_buffers();
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity))); //set the synch event with the index that is now the most up to date (regarding buffer data)
+                    println!("Worked off EntityAdded event");
+                }
+                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => {
+                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
+                    self.buffer_manager.borrow_mut().sync_buffers(entity.clone(), acquired_swapchain_index);
+                    self.init_command_buffers();
+                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
+                    println!("Worked off buffer sync event");
+                }
+                _ => ()
+            }
+        }
     }
 }

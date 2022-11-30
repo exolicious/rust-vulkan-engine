@@ -112,8 +112,8 @@ impl Cube {
 impl RenderableEntity for Cube {}
 
 impl HasTransform for Cube {
-    fn get_transform(&self) -> Transform {
-        self.transform
+    fn get_transform(&self) -> &Transform {
+        &self.transform
     }
 }
 
@@ -123,7 +123,7 @@ impl Entity for Cube {
     }
 
     fn update(&mut self) -> () {
-        let amount: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+        let amount: f32 = rand::thread_rng().gen_range(-0.02_f32..0.02_f32);
         self.move_x(amount);
     }
 }
@@ -239,8 +239,8 @@ impl HasMesh for Cube {
         resulting_mesh
     }
     
-    fn get_mesh(& self) -> Mesh {
-        self.mesh.unwrap()
+    fn get_mesh(& self) -> &Mesh {
+        self.mesh.as_ref().unwrap()
     }
 }
 
