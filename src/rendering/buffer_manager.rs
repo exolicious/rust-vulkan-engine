@@ -4,7 +4,7 @@ use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage, cpu_access::WriteLockEr
 use crate::{camera::camera::Camera, physics::physics_traits::Transform};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 use std::error::Error;
-use std::fmt::Error as ErrorVal;
+use core::fmt::Error as ErrorVal;
 
 pub struct EntityTransformBufferIndexMap {
     pub count: usize,
@@ -159,7 +159,7 @@ impl BufferManager {
         match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
             Some(existing_mesh_accessor) => {
                 self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &entity_mesh.data, next_swapchain_image_index)?;
-                self.copy_transform_data_to_buffer(self.entities_transform_ids.len(), entity_transform, next_swapchain_image_index)?;
+                self.update_entity_transform_buffer(entity_id, entity_transform, next_swapchain_image_index)?;
             }
             _ => (),
         };
@@ -239,7 +239,7 @@ impl BufferManager {
                 self.copy_transform_data_to_buffer(entity_transform_index, entity_transform, next_swapchain_image_index)?;
                 Ok(())
             }
-            None => ("tried to update an entity´s transform, whose id is not registered in the entity_transform")
+            None => Err(Box::new(ErrorVal))
         }
     }
  
