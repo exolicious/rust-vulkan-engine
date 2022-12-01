@@ -246,7 +246,6 @@ impl BufferManager {
     fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
         write_lock[entity_transform_index] = entity_transform.model_matrix();
-        println!("Wrote to transform buffer");
         Ok(())
     }
 

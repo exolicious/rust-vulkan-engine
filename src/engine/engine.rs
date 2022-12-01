@@ -56,7 +56,7 @@ impl Engine {
     pub fn update_graphics(&mut self) -> () {
         self.renderer.work_off_queue(self.next_swapchain_image_index);
         for entity in &self.entities {
-            self.renderer.buffer_manager.borrow_mut().update_entity_transform_buffer(entity.borrow().get_id(), entity.borrow().get_transform(), self.next_swapchain_image_index);
+            self.renderer.buffer_manager.update_entity_transform_buffer(entity.borrow().get_id(), entity.borrow().get_transform(), self.next_swapchain_image_index);
         }
     }
 

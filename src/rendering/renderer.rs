@@ -42,7 +42,7 @@ pub struct Renderer<T> {
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
     frames: Vec<Frame>,
-    pub buffer_manager: Arc<RefCell<BufferManager>>,
+    pub buffer_manager: Box<BufferManager>,
     pub camera: Option<Camera>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_shader: Option<Arc<ShaderModule>>,
@@ -76,7 +76,7 @@ impl Renderer<Surface<Window>> {
         
         let render_pass = Self::create_render_pass(device.clone(), swapchain.clone());
 
-        let buffer_manager = Arc::new(RefCell::new(BufferManager::new(device.clone(), swapchain_images.len())));
+        let buffer_manager = Box::new(BufferManager::new(device.clone(), swapchain_images.len()));
         
         let event_queue = Vec::new();
         let frames = Vec::new();
@@ -110,9 +110,8 @@ impl Renderer<Surface<Window>> {
     pub fn build(&mut self, vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> () {
         self.vertex_shader = Some(vertex_shader);
         self.fragment_shader = Some(fragment_shader);
-        
-        self.buffer_manager.borrow().copy_vp_camera_data(0, self.camera.as_ref().unwrap());
-        self.buffer_manager.borrow().copy_vp_camera_data(1, self.camera.as_ref().unwrap());
+        self.buffer_manager.copy_vp_camera_data(0, self.camera.as_ref().unwrap());
+        self.buffer_manager.copy_vp_camera_data(1, self.camera.as_ref().unwrap());
         self.init_pipeline();
         self.init_frames();
     }
@@ -264,10 +263,9 @@ impl Renderer<Surface<Window>> {
                 swapchain_image.clone(), 
                 self.device.clone(), 
                 self.pipeline.as_ref().unwrap().clone(), 
-                self.buffer_manager.clone(),
                 swapchain_image_index
             );
-            temp_frame.init(self.render_pass.clone(), self.active_queue.queue_family_index());
+            temp_frame.init(self.render_pass.clone(), self.active_queue.queue_family_index(), &self.buffer_manager);
             temp_frames.push(temp_frame);
         }
         self.frames = temp_frames;
@@ -275,7 +273,7 @@ impl Renderer<Surface<Window>> {
 
     fn init_command_buffers(&mut self) {
         for frame in self.frames.iter_mut() {
-            frame.init_draw_command_buffer(self.active_queue.queue_family_index());
+            frame.init_draw_command_buffer(self.active_queue.queue_family_index(), &self.buffer_manager);
         }
     }
 
@@ -319,23 +317,31 @@ impl Renderer<Surface<Window>> {
         let len = self.event_queue.len();
         for _ in 0..len {
             match self.event_queue.pop() {
-                Some(RendererEvent::EntityAdded(entity)) => {
-                    println!("Entity added in frame index: {}", acquired_swapchain_index);
-                    self.buffer_manager.borrow_mut().register_entity(entity.clone(), acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity))); //set the synch event with the index that is now the most up to date (regarding buffer data)
-                    println!("Worked off EntityAdded event");
-                }
-                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => {
-                    println!("Attempting sync for frame index: {}", acquired_swapchain_index);
-                    if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); break; } //if this is not equal, there is still synching to be done, until they are equal
-                    self.buffer_manager.borrow_mut().sync_buffers(entity.clone(), acquired_swapchain_index);
-                    self.init_command_buffers();
-                    self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
-                    println!("Worked off buffer sync event");
-                }
+                Some(RendererEvent::EntityAdded(entity)) => self.entity_added_handler(acquired_swapchain_index, entity),
+                Some(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)) => self.synch_buffers_handler(most_up_to_date_buffer_index, acquired_swapchain_index, entity),
                 _ => ()
             }
         }
+    }
+
+    fn entity_added_handler(&mut self, acquired_swapchain_index: usize, entity: Arc<RefCell<dyn RenderableEntity>>) {
+        println!("Entity added in frame index: {}", acquired_swapchain_index);
+        match self.buffer_manager.register_entity(entity.clone(), acquired_swapchain_index) {
+            Ok(()) => {
+                self.init_command_buffers();
+                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(acquired_swapchain_index, entity))); //set the synch event with the index that is now the most up to date (regarding buffer data)
+                println!("Successfully handled EntityAdded event");
+            }
+            Err(err) => println!("something went wrong while handling the EntityAdded Event"),
+        }
+    }
+
+    fn synch_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, acquired_swapchain_index: usize, entity: Arc<RefCell<dyn RenderableEntity>>) {
+        if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); return; } //if this is not equal, there is still synching to be done, until they are equal
+        println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+        self.buffer_manager.sync_buffers(entity.clone(), acquired_swapchain_index);
+        self.init_command_buffers();
+        self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
+        println!("Worked off buffer sync event");
     }
 }

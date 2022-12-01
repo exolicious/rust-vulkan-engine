@@ -14,25 +14,24 @@ pub struct Frame {
     pipeline: Arc<GraphicsPipeline>, 
     framebuffer: Option<Arc<Framebuffer>>,
     pub draw_command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
-    buffer_manager: Arc<RefCell<BufferManager>>
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, buffer_manager: Arc<RefCell<BufferManager>>, swapchain_image_index: usize) -> Self {
+    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Self {
         Self {
             swapchain_image,    
             device,
             swapchain_image_index,
             pipeline,
-            buffer_manager,
+
             framebuffer: None,
             draw_command_buffer: None,
         }
     }
 
-    pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32) {
+    pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) {
         self.init_framebuffer(render_pass);
-        self.init_draw_command_buffer(active_queue_family_index);
+        self.init_draw_command_buffer(active_queue_family_index, buffer_manager);
     }
 
     fn init_framebuffer(&mut self, render_pass: Arc<RenderPass>) -> () {
@@ -47,7 +46,7 @@ impl Frame {
         self.framebuffer = Some(framebuffer);
     }
 
-    pub fn init_draw_command_buffer(&mut self, active_queue_family_index: u32) -> () {
+    pub fn init_draw_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) -> () {
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             self.device.clone(),
             active_queue_family_index,
@@ -56,10 +55,10 @@ impl Frame {
         .unwrap();
 
         let mut descriptor_sets = Vec::new();
-        descriptor_sets.push(self.buffer_manager.borrow().get_vp_matrix_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
-        descriptor_sets.push(self.buffer_manager.borrow().get_transform_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
+        descriptor_sets.push(buffer_manager.get_vp_matrix_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
+        descriptor_sets.push(buffer_manager.get_transform_buffer_descriptor_set(self.pipeline.clone(), self.swapchain_image_index).clone());
         
-        let vertex_buffer = self.buffer_manager.borrow().vertex_buffers[self.swapchain_image_index].clone();
+        let vertex_buffer = buffer_manager.vertex_buffers[self.swapchain_image_index].clone();
 
         let builder = command_buffer_builder
             .begin_render_pass(
@@ -79,8 +78,8 @@ impl Frame {
                 descriptor_sets,
             );
 
-            if self.buffer_manager.borrow().mesh_accessors.len() > 0 {
-                let builder = self.buffer_manager.borrow().mesh_accessors.iter().fold(builder, |builder, mesh_accessor| {
+            if buffer_manager.mesh_accessors.len() > 0 {
+                let builder = buffer_manager.mesh_accessors.iter().fold(builder, |builder, mesh_accessor| {
                     //println!("instance count: {}, first index: {}, last index: {}", mesh_accessor.instance_count, mesh_accessor.first_index, mesh_accessor.last_index);
                     builder
                         .draw(mesh_accessor.vertex_count.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
