@@ -8,7 +8,7 @@ use winit::event_loop::{EventLoop};
 use winit::window::Window;
 
 use crate::camera::camera::Camera;
-use crate::physics::physics_traits::{Movable, Transform, HasTransform};
+use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
 use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
 use crate::rendering::rendering_traits::{HasMesh, RenderableEntity};
@@ -72,7 +72,6 @@ impl Engine {
                 self.entities.push(cube);
             }
             None => {
-
                 let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() })));
                 cube.borrow_mut().set_mesh();
                 self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));

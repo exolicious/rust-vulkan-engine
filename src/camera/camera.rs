@@ -1,7 +1,5 @@
 use crate::{physics::physics_traits::{Transform, Movable}, engine::general_traits::Entity};
-
 use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
-
 use nanoid::nanoid;
 
 #[derive(Debug, Clone)]
