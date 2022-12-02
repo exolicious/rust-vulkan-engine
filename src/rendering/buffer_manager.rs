@@ -1,6 +1,6 @@
-use std::{collections::{HashMap}, sync::Arc, cell::RefCell, hash::Hash};
+use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage, cpu_access::WriteLockError}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
+use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
 use crate::{camera::camera::Camera, physics::physics_traits::Transform};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 use std::error::Error;
@@ -59,7 +59,7 @@ impl Default for MeshAccessor {
 }
 
 const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
-const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(10) as usize; // 32 instances
+const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(12) as usize; // 32 instances
 
 pub struct BufferManager {
     /*     renderer_device:  Arc<Device>, */
@@ -172,16 +172,8 @@ impl BufferManager {
         let entity_id = binding.get_id();
         let entity_transform = binding.get_transform();
 
-        let (mut mesh_accessor, is_new) = self.get_mesh_accessor(entity_mesh);
-        mesh_accessor.add_entity();
+        self.add_entity_to_mesh_accessor(entity_mesh, next_swapchain_image_index)?;
 
-        match is_new {
-            true => { 
-                self.copy_blueprint_mesh_data_to_vertex_buffer(& mesh_accessor, &entity_mesh.data, next_swapchain_image_index)?;
-                self.mesh_accessors.push(mesh_accessor); // if the copying fails, this mesh accessor will just get dropped at the end of this function and wont get pushed
-            }
-            false => (), //if the mesh_accessor is not new we dont need to do any vertex buffer stuff
-        }
         let entity_transform_index = self.entities_transform_ids.len();
         self.copy_transform_data_to_buffer(entity_transform_index, entity_transform, next_swapchain_image_index)?;
         self.entities_transform_ids.push(entity_id.to_string());
@@ -190,46 +182,46 @@ impl BufferManager {
         Ok(())
     }
     
-    fn get_mesh_accessor(&self, entity_mesh: &Mesh) -> (MeshAccessor, bool) {
-        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
+    fn add_entity_to_mesh_accessor(&mut self, entity_mesh: &Mesh, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
             Some(existing_mesh_accessor) => {
-                return (existing_mesh_accessor.to_owned(), false)
+                existing_mesh_accessor.add_entity();
             },
             None => {
-                match self.mesh_accessors.iter().last() {
+                let mut mesh_accessor = match self.mesh_accessors.iter().last() {
                     Some(previous_accessor) => {
-                        let new_mesh_accessor_from_previous = MeshAccessor {
+                        MeshAccessor {
                             mesh_hash: entity_mesh.hash, 
                             first_index: previous_accessor.last_index, 
                             vertex_count: entity_mesh.vertex_count, 
                             last_index: previous_accessor.last_index + entity_mesh.vertex_count,
                             first_instance: previous_accessor.first_instance + previous_accessor.instance_count,
                             instance_count: 0
-                        };
-                        return (new_mesh_accessor_from_previous, true)
+                        }
                     }
                     None =>  {
-                        let first_mesh_accessor =  MeshAccessor { 
+                        MeshAccessor { 
                             mesh_hash: entity_mesh.hash, 
                             vertex_count: entity_mesh.vertex_count, 
                             last_index: entity_mesh.vertex_count,
                             first_index: 0,
                             first_instance: 0,
                             instance_count: 0
-                        };
-                        return (first_mesh_accessor, true)
+                        }
                     }
-                }
+                };
+                self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_accessor, &entity_mesh.data, next_swapchain_image_index)?;
+                mesh_accessor.add_entity();
+                self.mesh_accessors.push(mesh_accessor); // if the copying fails, this mesh accessor will just get dropped at the end of this function and wont get pushed
             }
         }
+        Ok(())
     }
 
     fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_accessor: & MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        println!("first index: {} \n last index: {} ", mesh_accessor.first_index, mesh_accessor.last_index);
         let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
         let mut write_lock =  main_vertex_buffer.write()?;
         write_lock[mesh_accessor.first_index..mesh_accessor.last_index].copy_from_slice(mesh_data.as_slice());
-        println!("Wrote to vertex_buffer");
         Ok(())
     }
 
@@ -259,7 +251,7 @@ impl BufferManager {
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
             layout.clone(),
-            [WriteDescriptorSet::buffer(0, Arc::new(self.vp_camera_buffers[next_swapchain_image_index].clone()))], // 0 is the binding
+            [WriteDescriptorSet::buffer(0, self.vp_camera_buffers[next_swapchain_image_index].clone())], // 0 is the binding
         )
         .unwrap()
     }
@@ -268,7 +260,7 @@ impl BufferManager {
         let layout = pipeline.layout().set_layouts().get(1).unwrap();
         PersistentDescriptorSet::new(
             layout.clone(),
-            [WriteDescriptorSet::buffer(0, Arc::new(self.transform_buffers[next_swapchain_image_index].clone()))],
+            [WriteDescriptorSet::buffer(0, self.transform_buffers[next_swapchain_image_index].clone())],
         )
         .unwrap()
     }

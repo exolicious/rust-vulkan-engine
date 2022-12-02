@@ -339,9 +339,12 @@ impl Renderer<Surface<Window>> {
     fn synch_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, acquired_swapchain_index: usize, entity: Arc<RefCell<dyn RenderableEntity>>) {
         if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); return; } //if this is not equal, there is still synching to be done, until they are equal
         println!("Attempting sync for frame index: {}", acquired_swapchain_index);
-        self.buffer_manager.sync_buffers(entity.clone(), acquired_swapchain_index);
-        self.init_command_buffers();
-        self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
-        println!("Worked off buffer sync event");
+        match self.buffer_manager.sync_buffers(entity.clone(), acquired_swapchain_index) {
+            Ok(()) => {
+                self.init_command_buffers();
+                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(most_up_to_date_buffer_index, entity)));
+            }
+            Err(err) => println!("something went wrong while handling the SynchBuffers Event"),
+        }
     }
 }

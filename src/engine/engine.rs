@@ -66,7 +66,7 @@ impl Engine {
                 let rand_x: f32 = rand::thread_rng().gen_range(-0.5_f32..0.5_f32);
                 let rand_y: f32 = rand::thread_rng().gen_range(-0.5_f32..1_f32);
                 let rand_z: f32 = rand::thread_rng().gen_range(-2_f32..-0.7_f32);
-                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: rand_x, y: rand_y, z: rand_z }, Transform { translation, ..Default::default()})));
+                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation, ..Default::default()})));
                 cube.borrow_mut().set_mesh();
                 self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
                 self.entities.push(cube);
