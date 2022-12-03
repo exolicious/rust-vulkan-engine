@@ -91,8 +91,6 @@ impl Frame {
             }
             else {
                 builder
-                .draw(0, 0, 0, 0)
-                .unwrap()
                 .end_render_pass()
                 .unwrap();
             }

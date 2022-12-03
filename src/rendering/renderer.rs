@@ -3,18 +3,17 @@ use std::{sync::Arc, cell::RefCell};
 use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, SwapchainAcquireFuture, PresentFuture, PresentInfo}, 
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
     image::{SwapchainImage, ImageUsage}, render_pass::{RenderPass, Subpass}, 
-    pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline, Pipeline}, 
-    command_buffer::{PrimaryAutoCommandBuffer, CommandBufferExecFuture}, shader::ShaderModule, buffer::{CpuAccessibleBuffer}, descriptor_set::{WriteDescriptorSet, PersistentDescriptorSet}, 
-    sync::{GpuFuture, FenceSignalFuture, JoinFuture, FlushError}};
+    pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline}, 
+    command_buffer::{PrimaryAutoCommandBuffer, CommandBufferExecFuture}, shader::ShaderModule, sync::{GpuFuture, FenceSignalFuture, JoinFuture, FlushError}};
 
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
-use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::Camera, physics::physics_traits::Transform, engine::engine::EntityToBufferRegisterData};
+use crate::{initialize::vulkan_instancing::get_vulkan_instance, camera::camera::Camera};
 use crate::rendering::primitives::Vertex;
 use crate::rendering::frame::Frame;
 
-use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager, primitives::Mesh};
+use super::{rendering_traits::{RenderableEntity}, buffer_manager::BufferManager};
 
 pub enum EventResolveTiming {
     Immediate(RendererEvent),
