@@ -42,6 +42,7 @@ pub struct Renderer<T> {
     pub swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
+    event_queue_next_frame: Vec<RendererEvent>,
     frames: Vec<Frame>,
     pub buffer_manager: Box<BufferManager>,
     pub active_scene: Option<Arc<Scene>>,
@@ -80,6 +81,7 @@ impl Renderer<Surface<Window>> {
         let buffer_manager = Box::new(BufferManager::new(device.clone(), swapchain_images.len()));
         
         let event_queue = Vec::new();
+        let event_queue_next_frame = Vec::new();
         let frames = Vec::new();
         Self {
             //vulkan_instance,
@@ -94,6 +96,7 @@ impl Renderer<Surface<Window>> {
             swapchain_images,
             render_pass,
             event_queue,
+            event_queue_next_frame,
             frames,
             buffer_manager,
             active_scene: None,
@@ -242,7 +245,7 @@ impl Renderer<Surface<Window>> {
                     RendererEvent::SynchCameraBuffers(_, _) => todo!(),
                 }  
             },
-            EventResolveTiming::NextImage(event) => self.event_queue.push(event)
+            EventResolveTiming::NextImage(event) => self.event_queue_next_frame.push(event)
         }
     }
 
@@ -317,13 +320,21 @@ impl Renderer<Surface<Window>> {
 
     pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
         let len = self.event_queue.len();
-        for _ in 0..len {
-            match self.event_queue.pop() {
-                Some(RendererEvent::EntityAdded(entity)) => self.entity_added_handler(acquired_swapchain_index, entity),
-                Some(RendererEvent::ChangedActiveScene(active_scene)) => self.changed_active_scene_handler(acquired_swapchain_index, active_scene),
-                Some(RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index)) => self.synch_buffers_handler(most_up_to_date_buffer_index, acquired_swapchain_index, entity),
-                Some(RendererEvent::SynchCameraBuffers(scene, most_up_to_date_buffer_index)) => self.synch_camera_buffers_handler(most_up_to_date_buffer_index, acquired_swapchain_index, scene),
+        for i in 0..len {
+            match &self.event_queue[i] { // ToDo: this is troublesome.. huge bug that needs to be fixed, when we have multiple events that in turn push synch events, those should not be handled in this frame, but rather in the next one
+                RendererEvent::EntityAdded(entity) => self.entity_added_handler(acquired_swapchain_index, entity.clone()),
+                RendererEvent::ChangedActiveScene(active_scene) => self.changed_active_scene_handler(acquired_swapchain_index, active_scene.clone()),
+                RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index) => self.synch_buffers_handler(*most_up_to_date_buffer_index, acquired_swapchain_index, entity.clone()),
+                RendererEvent::SynchCameraBuffers(scene, most_up_to_date_buffer_index) => self.synch_camera_buffers_handler(*most_up_to_date_buffer_index, acquired_swapchain_index, scene.clone()),
                 _ => ()
+            }
+        }
+        self.event_queue = Vec::new();
+        let len = self.event_queue_next_frame.len();
+        for _ in 0..len {
+            match self.event_queue_next_frame.pop() {
+                Some(event) => self.event_queue.push(event),
+                None => todo!(),
             }
         }
     }
@@ -341,8 +352,8 @@ impl Renderer<Surface<Window>> {
     }
 
     fn synch_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, acquired_swapchain_index: usize, entity: Arc<RefCell<dyn RenderableEntity>>) -> () {
-        if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); return; } //if this is not equal, there is still synching to be done, until they are equal
-        println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+        if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all vertex/transform buffers are up to date"); return; } //if this is not equal, there is still synching to be done, until they are equal
+        println!("Attempting Vertex and transform buffer sync for frame index: {}", acquired_swapchain_index);
         match self.buffer_manager.sync_mesh_and_transform_buffers(entity.clone(), acquired_swapchain_index) {
             Ok(()) => {
                 self.init_command_buffers();
@@ -357,8 +368,8 @@ impl Renderer<Surface<Window>> {
         match self.buffer_manager.copy_vp_camera_data(&active_scene.camera, acquired_swapchain_index) {
             Ok(()) => {
                 self.init_command_buffers();
-                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchCameraBuffers(active_scene, acquired_swapchain_index))); //set the synch event with the index that is now the most up to date (regarding buffer data)
-                println!("Successfully handled EntityAdded event");
+                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchCameraBuffers(active_scene.clone(), acquired_swapchain_index))); //set the synch event with the index that is now the most up to date (regarding buffer data)
+                println!("Successfully handled Changed Active Scene event");
             }
             Err(err) => println!("something went wrong while handling the EntityAdded Event"),
         }
@@ -369,16 +380,14 @@ impl Renderer<Surface<Window>> {
 
     fn synch_camera_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, acquired_swapchain_index: usize, active_scene: Arc<Scene>) -> () {
         if most_up_to_date_buffer_index == acquired_swapchain_index { println!("all buffers are up to date"); return; } //if this is not equal, there is still synching to be done, until they are equal
-        println!("Attempting sync for frame index: {}", acquired_swapchain_index);
+        println!("Attempting camera vp buffer sync for frame index: {}", acquired_swapchain_index);
         match self.buffer_manager.copy_vp_camera_data(&active_scene.camera, acquired_swapchain_index) {
             Ok(()) => {
                 self.init_command_buffers();
-                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchCameraBuffers(active_scene, acquired_swapchain_index))); //set the synch event with the index that is now the most up to date (regarding buffer data)
-                println!("Successfully handled EntityAdded event");
+                self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchCameraBuffers(active_scene, most_up_to_date_buffer_index))); //set the synch event with the index that is now the most up to date (regarding buffer data)
+                println!("Successfully handled Synch Camera Buffers event");
             }
             Err(err) => println!("something went wrong while handling the EntityAdded Event"),
         }
     }
-
-
 }

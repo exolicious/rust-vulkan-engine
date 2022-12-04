@@ -70,7 +70,6 @@ pub struct BufferManager {
     vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
     needs_reallocation: bool,
-    ahead_buffers_index: Option<usize>
 }
 
 impl BufferManager {
@@ -89,7 +88,6 @@ impl BufferManager {
             entities_transform_ids,
             /* entity_transform_buffer_entries, */
             needs_reallocation: false,
-            ahead_buffers_index: None
         }
     }
     
@@ -178,7 +176,6 @@ impl BufferManager {
         self.copy_transform_data_to_buffer(entity_transform_index, entity_transform, next_swapchain_image_index)?;
         self.entities_transform_ids.push(entity_id.to_string());
 
-        self.ahead_buffers_index = Some(next_swapchain_image_index);
         Ok(())
     }
     
@@ -222,6 +219,7 @@ impl BufferManager {
         let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
         let mut write_lock =  main_vertex_buffer.write()?;
         write_lock[mesh_accessor.first_index..mesh_accessor.last_index].copy_from_slice(mesh_data.as_slice());
+        //println!("Successfully copied mesh data: {:?} to vertex buffer with index: {}", mesh_data.as_slice(), next_swapchain_image_index);
         Ok(())
     }
 
@@ -238,12 +236,14 @@ impl BufferManager {
     fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
         write_lock[entity_transform_index] = entity_transform.model_matrix();
+        //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
         Ok(())
     }
 
     pub fn copy_vp_camera_data(& self, camera: &Camera, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock = self.vp_camera_buffers[next_swapchain_image_index].write()?;
         *write_lock = camera.projection_view_matrix.into();
+        println!("Successfully copied camera vp_matrix: {:?} to vp buffer with index: {}", camera.projection_view_matrix, next_swapchain_image_index);
         Ok(())
     }
 
