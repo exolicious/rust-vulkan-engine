@@ -319,17 +319,8 @@ impl Renderer<Surface<Window>> {
     }
 
     pub fn work_off_queue(&mut self, acquired_swapchain_index: usize) {
-        let len = self.event_queue.len();
-        for i in 0..len {
-            match &self.event_queue[i] { // ToDo: this is troublesome.. huge bug that needs to be fixed, when we have multiple events that in turn push synch events, those should not be handled in this frame, but rather in the next one
-                RendererEvent::EntityAdded(entity) => self.entity_added_handler(acquired_swapchain_index, entity.clone()),
-                RendererEvent::ChangedActiveScene(active_scene) => self.changed_active_scene_handler(acquired_swapchain_index, active_scene.clone()),
-                RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index) => self.synch_buffers_handler(*most_up_to_date_buffer_index, acquired_swapchain_index, entity.clone()),
-                RendererEvent::SynchCameraBuffers(scene, most_up_to_date_buffer_index) => self.synch_camera_buffers_handler(*most_up_to_date_buffer_index, acquired_swapchain_index, scene.clone()),
-                _ => ()
-            }
-        }
-        self.event_queue = Vec::new();
+        //set up the event queue from the next_frame event queue
+       
         let len = self.event_queue_next_frame.len();
         for _ in 0..len {
             match self.event_queue_next_frame.pop() {
@@ -337,6 +328,20 @@ impl Renderer<Surface<Window>> {
                 None => todo!(),
             }
         }
+        let len = self.event_queue.len();
+        println!("Event queue length: {}", len);
+
+        //work off the events
+        for _ in 0..len {
+            match self.event_queue.pop() { // ToDo: decide if fifo or lifo is the right way, for now lifo seems to work
+                Some(RendererEvent::EntityAdded(entity)) => self.entity_added_handler(acquired_swapchain_index, entity),
+                Some(RendererEvent::ChangedActiveScene(active_scene)) => self.changed_active_scene_handler(acquired_swapchain_index, active_scene),
+                Some(RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index)) => self.synch_buffers_handler(most_up_to_date_buffer_index, acquired_swapchain_index, entity),
+                Some(RendererEvent::SynchCameraBuffers(scene, most_up_to_date_buffer_index)) => self.synch_camera_buffers_handler(most_up_to_date_buffer_index, acquired_swapchain_index, scene),
+                _ => ()
+            }
+        }
+        
     }
 
     fn entity_added_handler(&mut self, acquired_swapchain_index: usize, entity: Arc<RefCell<dyn RenderableEntity>>) -> ()  {
