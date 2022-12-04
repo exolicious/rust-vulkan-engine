@@ -7,12 +7,14 @@ use vulkano::swapchain::{Surface};
 use winit::event_loop::{EventLoop};
 use winit::window::Window;
 
-use crate::camera::camera::Camera;
+use crate::engine::camera::Camera;
 use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
 use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
 use crate::rendering::rendering_traits::{HasMesh, RenderableEntity};
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
+
+use super::scene::Scene;
 
 pub struct EntityToBufferRegisterData {
     pub id: String,
@@ -24,6 +26,7 @@ pub struct Engine {
     pub renderer: Renderer<Surface<Window>>,
     entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
     pub next_swapchain_image_index: usize,
+    scenes: Vec<Arc<Scene>>
 }
 
 impl Engine {
@@ -31,17 +34,21 @@ impl Engine {
         let mut renderer = Renderer::new(&event_loop);
         let entities = Vec::new();
 
-        let camera = Camera::new();
+        let scene_1 = Arc::new(Scene::new());
 
         let shaders = Shaders::load(renderer.device.clone()).unwrap();
         
-        renderer.use_camera(camera);
+        renderer.set_active_scene(scene_1.clone());
         renderer.build(shaders.vertex_shader, shaders.fragment_shader);
+
+        let mut scenes = Vec::new();
+        scenes.push(scene_1);
         
         Self {
             renderer,
             entities,
             next_swapchain_image_index: 0,
+            scenes
         }
     }
 

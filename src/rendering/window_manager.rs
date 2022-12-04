@@ -33,7 +33,7 @@ impl WindowManager {
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
 
-        self.event_loop.run_return(move |event, _, control_flow| match event {
+        self.event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -88,7 +88,7 @@ impl WindowManager {
                     image_fence.wait(None).unwrap();
                     self.engine.next_swapchain_image_index = swapchain_image_index;
                     self.engine.update_graphics();
-                } 
+                }
 
                 let previous_future = match fences[previous_fence_i].clone() {
                     None => {

@@ -4,7 +4,7 @@ use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 use rand::Rng;
 
-use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
+use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::{Entity, RegisterToBuffer}};
 
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
@@ -243,5 +243,3 @@ impl HasMesh for Cube {
         self.mesh.as_ref().unwrap()
     }
 }
-
-

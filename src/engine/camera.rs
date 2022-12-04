@@ -12,10 +12,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new() -> Self {
-        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: 2. }, ..Default::default() };
-        let projection_matrix = perspective(Deg{ 0: 55.}, 16./9. , 1., 4000.);
-
+    pub fn new(transform: Transform, projection_matrix: Matrix4<f32>) -> Self {
         let translation_matrix = Matrix4::from_translation(transform.translation);
         println!("translation amtrix : {:?}", translation_matrix);
         let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg { 0: transform.rotation.s });

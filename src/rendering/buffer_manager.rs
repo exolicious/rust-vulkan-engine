@@ -1,7 +1,7 @@
 use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
-use crate::{camera::camera::Camera, physics::physics_traits::Transform};
+use crate::{engine::camera::Camera, physics::physics_traits::Transform};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 use std::error::Error;
 use core::fmt::Error as ErrorVal;
@@ -66,8 +66,8 @@ pub struct BufferManager {
     pub mesh_accessors: Vec<MeshAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
     pub vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
-    pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
-    vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
+    transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
+    vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
     needs_reallocation: bool,
     ahead_buffers_index: Option<usize>
@@ -150,7 +150,7 @@ impl BufferManager {
         vp_matrix_buffers
     }
 
-    pub fn sync_buffers(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+    pub fn sync_mesh_and_transform_buffers(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let binding = entity.borrow();
         let entity_mesh = binding.get_mesh();
         let entity_id = binding.get_id();
@@ -241,7 +241,7 @@ impl BufferManager {
         Ok(())
     }
 
-    pub fn copy_vp_camera_data(& self, next_swapchain_image_index: usize, camera: &Camera) -> Result<(), Box<dyn Error>> {
+    pub fn copy_vp_camera_data(& self, camera: &Camera, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock = self.vp_camera_buffers[next_swapchain_image_index].write()?;
         *write_lock = camera.projection_view_matrix.into();
         Ok(())
