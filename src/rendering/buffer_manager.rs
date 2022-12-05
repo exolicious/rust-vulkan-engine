@@ -70,6 +70,7 @@ pub struct BufferManager {
     vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
     needs_reallocation: bool,
+    pub entites_to_update: HashMap<String, Transform>
 }
 
 impl BufferManager {
@@ -79,6 +80,7 @@ impl BufferManager {
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
         let mesh_accessors = Vec::new();
         let entities_transform_ids = Vec::new();
+        let entites_to_update = HashMap::new();
         Self {
             /* renderer_device, */
             mesh_accessors,
@@ -86,6 +88,7 @@ impl BufferManager {
             transform_buffers,
             vp_camera_buffers,
             entities_transform_ids,
+            entites_to_update,
             /* entity_transform_buffer_entries, */
             needs_reallocation: false,
         }
@@ -215,11 +218,22 @@ impl BufferManager {
         Ok(())
     }
 
-    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_accessor: & MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
-        let mut write_lock =  main_vertex_buffer.write()?;
-        write_lock[mesh_accessor.first_index..mesh_accessor.last_index].copy_from_slice(mesh_data.as_slice());
-        //println!("Successfully copied mesh data: {:?} to vertex buffer with index: {}", mesh_data.as_slice(), next_swapchain_image_index);
+    pub fn update_buffers(&mut self, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let mut entity_model_matrices = Vec::new();
+        for (offset, (id, transform)) in self.entites_to_update.iter().enumerate() {
+            entity_model_matrices.push(transform.model_matrix())
+        }
+        //todo: it is not always guaranteed that the first index will be the 0, we might have different clusters of entities, whose model matrices will not necessarily be adjacent
+        self.copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, next_swapchain_image_index)?;
+        self.entites_to_update.clear();
+    
+        Ok(())
+    }
+
+    fn copy_transform_data_slice_to_buffer(& self,entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
+        write_lock[entity_transforms_first_index..entity_transforms_last_index].copy_from_slice(entity_model_matrices);
+        //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
         Ok(())
     }
 
@@ -231,6 +245,14 @@ impl BufferManager {
             }
             None => Err(Box::new(ErrorVal))
         }
+    }
+
+    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_accessor: & MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
+        let mut write_lock =  main_vertex_buffer.write()?;
+        write_lock[mesh_accessor.first_index..mesh_accessor.last_index].copy_from_slice(mesh_data.as_slice());
+        //println!("Successfully copied mesh data: {:?} to vertex buffer with index: {}", mesh_data.as_slice(), next_swapchain_image_index);
+        Ok(())
     }
  
     fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {

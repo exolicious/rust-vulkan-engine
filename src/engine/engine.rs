@@ -7,13 +7,13 @@ use vulkano::swapchain::{Surface};
 use winit::event_loop::{EventLoop};
 use winit::window::Window;
 
-use crate::engine::camera::Camera;
 use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
 use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
 use crate::rendering::rendering_traits::{HasMesh, RenderableEntity};
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
 
+use super::general_traits::EntityUpdateAction;
 use super::scene::Scene;
 
 pub struct EntityToBufferRegisterData {
@@ -54,17 +54,19 @@ impl Engine {
 
     pub fn update_engine(&mut self) -> () {
         //self.renderer.camera.as_mut().unwrap().update_position();
-
         for entity in &self.entities {
-            entity.borrow_mut().update();
+            let mut binding = entity.borrow_mut();
+            let entity_update_info = binding.update();
+            match entity_update_info {
+                EntityUpdateAction::HasMoved(id, transform) => { self.renderer.buffer_manager.entites_to_update.insert(id, transform); }
+                EntityUpdateAction::None => todo!(),
+            }
         }
     }
 
     pub fn update_graphics(&mut self) -> () {
         self.renderer.work_off_queue(self.next_swapchain_image_index);
-        for entity in &self.entities {
-            self.renderer.buffer_manager.update_entity_transform_buffer(entity.borrow().get_id(), entity.borrow().get_transform(), self.next_swapchain_image_index);
-        }
+        self.renderer.buffer_manager.update_buffers(self.next_swapchain_image_index);
     }
 
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {

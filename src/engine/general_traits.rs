@@ -1,10 +1,15 @@
 use std::{error::Error, sync::Arc};
 
-use crate::rendering::buffer_manager::BufferManager;
+use crate::{rendering::buffer_manager::BufferManager, physics::physics_traits::Transform};
+
+pub enum EntityUpdateAction {
+    None,
+    HasMoved(String, Transform),
+}
 
 pub trait Entity {
     fn get_id(& self) -> &String;
-    fn update(&mut self) -> ();
+    fn update(&mut self) -> EntityUpdateAction;
 }
 
 pub trait RegisterToBuffer {

@@ -31,7 +31,7 @@ impl Frame {
 
     pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) {
         self.init_framebuffer(render_pass);
-        self.init_draw_command_buffer(active_queue_family_index, buffer_manager);
+        self.init_command_buffer(active_queue_family_index, buffer_manager);
     }
 
     fn init_framebuffer(&mut self, render_pass: Arc<RenderPass>) -> () {
@@ -46,7 +46,7 @@ impl Frame {
         self.framebuffer = Some(framebuffer);
     }
 
-    pub fn init_draw_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) -> () {
+    pub fn init_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) -> () {
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             self.device.clone(),
             active_queue_family_index,

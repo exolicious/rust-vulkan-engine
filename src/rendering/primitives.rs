@@ -4,7 +4,7 @@ use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 use rand::Rng;
 
-use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::{Entity, RegisterToBuffer}};
+use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::{Entity, RegisterToBuffer, EntityUpdateAction}};
 
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
@@ -95,7 +95,6 @@ pub struct Cube {
     transform: Transform,
     mesh: Option<Mesh>,
     id: String,
-    //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
 
 impl Cube {
@@ -122,9 +121,10 @@ impl Entity for Cube {
         &self.id
     }
 
-    fn update(&mut self) -> () {
+    fn update(&mut self) -> EntityUpdateAction {
         let amount: f32 = rand::thread_rng().gen_range(-0.02_f32..0.02_f32);
         self.move_x(amount);
+        EntityUpdateAction::HasMoved(self.get_id().to_string(), self.transform)
     }
 }
 

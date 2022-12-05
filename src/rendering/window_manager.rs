@@ -27,7 +27,6 @@ impl WindowManager {
         //init scene
         self.engine.add_cube_to_scene(None);
        
-
         //start event loop
         let frames_in_flight = self.engine.renderer.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
@@ -57,11 +56,12 @@ impl WindowManager {
                 if input.scancode == 57 {
                     match input.state {
                         winit::event::ElementState::Pressed => {
-                            println!("added cube");
-                            let rand_x: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
-                            let rand_y: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
-                            let rand_z: f32 = rand::thread_rng().gen_range(-7_f32..-2_f32);
-                            self.engine.add_cube_to_scene(Some(Vector3{ x: rand_x, y: rand_y, z: rand_z }));
+                            for _ in 0..100 {
+                                let rand_x: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+                                let rand_y: f32 = rand::thread_rng().gen_range(-2_f32..2_f32);
+                                let rand_z: f32 = rand::thread_rng().gen_range(-7_f32..-2_f32);
+                                self.engine.add_cube_to_scene(Some(Vector3{ x: rand_x, y: rand_y, z: rand_z }));
+                            }
                         }
                         _ => ()
                     }

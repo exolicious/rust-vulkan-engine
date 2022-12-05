@@ -1,6 +1,8 @@
 use crate::{physics::physics_traits::{Transform, Movable}, engine::general_traits::Entity};
-use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
+use cgmath::{Vector3, Matrix4, SquareMatrix, Deg, InnerSpace};
 use nanoid::nanoid;
+
+use super::general_traits::EntityUpdateAction;
 
 #[derive(Debug, Clone)]
 pub struct Camera {
@@ -42,8 +44,8 @@ impl Entity for Camera {
     fn get_id(&self) -> &String {
         &self.id
     }
-    fn update(self: &mut Camera) -> () {
-       return;
+    fn update(self: &mut Camera) -> EntityUpdateAction {
+        EntityUpdateAction::None
     }
 }
 
