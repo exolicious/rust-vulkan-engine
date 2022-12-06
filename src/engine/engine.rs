@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use cgmath::Vector3;
+use egui_winit_vulkano::Gui;
 use rand::Rng;
 use vulkano::swapchain::{Surface};
 use winit::event_loop::{EventLoop};
@@ -23,10 +24,11 @@ pub struct EntityToBufferRegisterData {
 }
 
 pub struct Engine {
-    pub renderer: Renderer<Surface<Window>>,
+    pub renderer: Renderer<Surface>,
     entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
     pub next_swapchain_image_index: usize,
-    scenes: Vec<Arc<Scene>>
+    scenes: Vec<Arc<Scene>>,
+    gui: Gui
 }
 
 impl Engine {
@@ -43,12 +45,16 @@ impl Engine {
 
         let mut scenes = Vec::new();
         scenes.push(scene_1);
+
+
+        let mut gui = Gui::new(&event_loop, renderer.surface, None, renderer.queue(), false);
         
         Self {
             renderer,
             entities,
             next_swapchain_image_index: 0,
-            scenes
+            scenes,
+            gui
         }
     }
 

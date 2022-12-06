@@ -1,6 +1,6 @@
 use std::{sync::Arc, cell::RefCell};
 
-use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, SwapchainAcquireFuture, PresentFuture, PresentInfo}, 
+use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, SwapchainAcquireFuture, PresentFuture, PresentInfo, SwapchainPresentInfo}, 
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
     image::{SwapchainImage, ImageUsage}, render_pass::{RenderPass, Subpass}, 
     pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline}, 
@@ -33,14 +33,14 @@ pub enum RendererEvent {
 pub struct Renderer<T> {
     //vulkan_instance: Arc<Instance>,
     viewport: Viewport,
-    surface: Arc<T>,
+    pub surface: Arc<T>,
     pub device: Arc<Device>,
     /* physical_device: Arc<PhysicalDevice>,
     queue_family_index: u32,
     queues: Box<(dyn ExactSizeIterator<Item = Arc<Queue>> + 'static)>, */
     pub active_queue: Arc<Queue>,
-    pub swapchain: Arc<Swapchain<Window>>,
-    pub swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
+    pub swapchain: Arc<Swapchain>,
+    pub swapchain_images: Vec<Arc<SwapchainImage>>,
     render_pass: Arc<RenderPass>,
     event_queue: Vec<RendererEvent>,
     event_queue_next_frame: Vec<RendererEvent>,
@@ -53,7 +53,7 @@ pub struct Renderer<T> {
     pub next_swapchain_image_index: usize,
 }
 
-impl Renderer<Surface<Window>> {
+impl Renderer<Surface> {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let vulkan_instance = get_vulkan_instance();
         let surface = WindowBuilder::new().build_vk_surface(&event_loop, vulkan_instance.clone()).unwrap();
@@ -65,7 +65,7 @@ impl Renderer<Surface<Window>> {
         Self::init(vulkan_instance, viewport, surface)
     }
 
-    pub fn init(vulkan_instance: Arc<Instance>, viewport: Viewport, surface : Arc<Surface<Window>>) -> Self {
+    pub fn init(vulkan_instance: Arc<Instance>, viewport: Viewport, surface : Arc<Surface>) -> Self {
         //this is just hard coded since we want this to only work with devices that support swapchains
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -121,7 +121,7 @@ impl Renderer<Surface<Window>> {
     }
 
     //initializes the physical device and gets the queue family index of the queue family that supports the needed properties of the surface (.surface_support)
-    fn init_physical_device_and_queue_family_index(device_extensions: DeviceExtensions, vulkan_instance: Arc<Instance>, surface: Arc<Surface<Window>>) -> (Arc<PhysicalDevice>, u32) {
+    fn init_physical_device_and_queue_family_index(device_extensions: DeviceExtensions, vulkan_instance: Arc<Instance>, surface: Arc<Surface>) -> (Arc<PhysicalDevice>, u32) {
         vulkan_instance
             .enumerate_physical_devices()
             .expect("failed to enumerate physical devices")
@@ -166,7 +166,7 @@ impl Renderer<Surface<Window>> {
         (device, queues, queue)
     }
 
-    fn init_swapchain_and_swapchain_images(physical_device: Arc<PhysicalDevice>, surface: Arc<Surface<Window>>, device: Arc<Device>) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
+    fn init_swapchain_and_swapchain_images(physical_device: Arc<PhysicalDevice>, surface: Arc<Surface>, device: Arc<Device>) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
         let caps = physical_device
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
@@ -199,7 +199,7 @@ impl Renderer<Surface<Window>> {
         (swapchain, swapchain_images)
     }
 
-    fn create_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Arc<RenderPass> {
+    fn create_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
         let render_pass = vulkano::single_pass_renderpass!(
             device.clone(),
             attachments: {
@@ -305,16 +305,16 @@ impl Renderer<Surface<Window>> {
         self.render_pass = Self::create_render_pass(self.device.clone(), self.swapchain.clone());
     }
 
-    pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture<Window>, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>, Arc<PrimaryAutoCommandBuffer>>, Window>>, FlushError> {
+    pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, FlushError>  {
         previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.frames[acquired_swapchain_index].draw_command_buffer.as_ref().unwrap().clone())
             .unwrap()
             .then_swapchain_present(
                 self.active_queue.clone(),
-                PresentInfo {
-                    index: acquired_swapchain_index,
-                    ..PresentInfo::swapchain(self.swapchain.clone())
+                SwapchainPresentInfo {
+
+                    ..SwapchainPresentInfo::swapchain(self.swapchain.clone())
                 },
             )
             .then_signal_fence_and_flush()

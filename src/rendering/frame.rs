@@ -8,7 +8,7 @@ use winit::window::Window;
 use super::{buffer_manager::BufferManager};
 
 pub struct Frame {
-    swapchain_image: Arc<SwapchainImage<Window>>,
+    swapchain_image: Arc<SwapchainImage>,
     device: Arc<Device>, 
     swapchain_image_index: usize,
     pipeline: Arc<GraphicsPipeline>, 
@@ -17,7 +17,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<SwapchainImage<Window>>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Self {
+    pub fn new(swapchain_image: Arc<SwapchainImage>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Self {
         Self {
             swapchain_image,    
             device,
