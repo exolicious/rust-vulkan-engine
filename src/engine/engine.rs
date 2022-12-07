@@ -24,7 +24,7 @@ pub struct EntityToBufferRegisterData {
 }
 
 pub struct Engine {
-    pub renderer: Renderer<Surface>,
+    pub renderer: Renderer,
     entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
     pub next_swapchain_image_index: usize,
     scenes: Vec<Arc<Scene>>,
@@ -47,7 +47,7 @@ impl Engine {
         scenes.push(scene_1);
 
 
-        let mut gui = Gui::new(&event_loop, renderer.surface, None, renderer.queue(), false);
+        let mut gui = Gui::new(&event_loop, renderer.surface.clone(), None, renderer.active_queue.clone(), false);
         
         Self {
             renderer,

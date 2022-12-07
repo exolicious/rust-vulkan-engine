@@ -1,7 +1,7 @@
 use std::{sync::Arc, cell::RefCell};
 
 use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, 
-    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}, 
+    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}}, 
     pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline, graphics::render_pass}};
 use winit::window::Window;
 
@@ -23,7 +23,6 @@ impl Frame {
             device,
             swapchain_image_index,
             pipeline,
-
             framebuffer: None,
             draw_command_buffer: None,
         }

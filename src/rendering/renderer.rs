@@ -4,7 +4,7 @@ use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCrea
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
     image::{SwapchainImage, ImageUsage}, render_pass::{RenderPass, Subpass}, 
     pipeline::{graphics::{viewport::{Viewport, ViewportState}, vertex_input::BuffersDefinition, input_assembly::InputAssemblyState}, GraphicsPipeline}, 
-    command_buffer::{PrimaryAutoCommandBuffer, CommandBufferExecFuture}, shader::ShaderModule, sync::{GpuFuture, FenceSignalFuture, JoinFuture, FlushError}};
+    command_buffer::{PrimaryAutoCommandBuffer, CommandBufferExecFuture}, shader::ShaderModule, sync::{GpuFuture, FenceSignalFuture, JoinFuture, FlushError}, descriptor_set::allocator::StandardDescriptorSetAllocator};
 
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
@@ -30,10 +30,10 @@ pub enum RendererEvent {
     SynchCameraBuffers(Arc<Scene>, usize)
 }
 
-pub struct Renderer<T> {
+pub struct Renderer {
     //vulkan_instance: Arc<Instance>,
     viewport: Viewport,
-    pub surface: Arc<T>,
+    pub surface: Arc<Surface>,
     pub device: Arc<Device>,
     /* physical_device: Arc<PhysicalDevice>,
     queue_family_index: u32,
@@ -53,7 +53,7 @@ pub struct Renderer<T> {
     pub next_swapchain_image_index: usize,
 }
 
-impl Renderer<Surface> {
+impl Renderer {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let vulkan_instance = get_vulkan_instance();
         let surface = WindowBuilder::new().build_vk_surface(&event_loop, vulkan_instance.clone()).unwrap();
@@ -312,10 +312,7 @@ impl Renderer<Surface> {
             .unwrap()
             .then_swapchain_present(
                 self.active_queue.clone(),
-                SwapchainPresentInfo {
-
-                    ..SwapchainPresentInfo::swapchain(self.swapchain.clone())
-                },
+                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), acquired_swapchain_index.try_into().unwrap())
             )
             .then_signal_fence_and_flush()
     }

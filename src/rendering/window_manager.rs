@@ -84,9 +84,9 @@ impl WindowManager {
                 }
 
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
-                if let Some(image_fence) = &fences[swapchain_image_index] {
+                if let Some(image_fence) = &fences[swapchain_image_index as usize] {
                     image_fence.wait(None).unwrap();
-                    self.engine.next_swapchain_image_index = swapchain_image_index;
+                    self.engine.next_swapchain_image_index = swapchain_image_index as usize;
                     self.engine.update_graphics();
                 } 
 
@@ -98,9 +98,9 @@ impl WindowManager {
                     }
                     Some(fence) => fence.boxed(),
                 };
-                let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index);
+                let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index as usize);
 
-                fences[swapchain_image_index] = match future {
+                fences[swapchain_image_index as usize] = match future {
                     Ok(value) => {
                         Some(Arc::new(value))
                     }
@@ -113,7 +113,7 @@ impl WindowManager {
                         None
                     }
                 };
-                previous_fence_i = swapchain_image_index;
+                previous_fence_i = swapchain_image_index as usize;
             }
             _ => self.engine.update_engine(),
         });

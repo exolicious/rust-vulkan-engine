@@ -1,6 +1,6 @@
 use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
+use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator}, pipeline::{Pipeline, GraphicsPipeline}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 use std::error::Error;
@@ -62,6 +62,8 @@ const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize;
 const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(12) as usize; // 32 instances
 
 pub struct BufferManager {
+    descriptor_set_allocator: StandardDescriptorSetAllocator,
+    command_buffer_allocator: StandardCommandBufferAllocator,
     /*     renderer_device:  Arc<Device>, */
     pub mesh_accessors: Vec<MeshAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
@@ -78,6 +80,9 @@ impl BufferManager {
         let vertex_buffers = Self::initialize_vertex_buffers(renderer_device.clone(), swapchain_images_length);
         let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), swapchain_images_length);
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
+
+        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(renderer_device.clone());
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(renderer_device.clone(), StandardCommandBufferAllocatorCreateInfo{ ..Default::default() });
         let mesh_accessors = Vec::new();
         let entities_transform_ids = Vec::new();
         let entites_to_update = HashMap::new();
@@ -88,6 +93,8 @@ impl BufferManager {
             transform_buffers,
             vp_camera_buffers,
             entities_transform_ids,
+            descriptor_set_allocator,
+            command_buffer_allocator,
             entites_to_update,
             /* entity_transform_buffer_entries, */
             needs_reallocation: false,
@@ -272,6 +279,7 @@ impl BufferManager {
     pub fn get_vp_matrix_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
             layout.clone(),
             [WriteDescriptorSet::buffer(0, self.vp_camera_buffers[next_swapchain_image_index].clone())], // 0 is the binding
         )
@@ -281,6 +289,7 @@ impl BufferManager {
     pub fn get_transform_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
         let layout = pipeline.layout().set_layouts().get(1).unwrap();
         PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
             layout.clone(),
             [WriteDescriptorSet::buffer(0, self.transform_buffers[next_swapchain_image_index].clone())],
         )
