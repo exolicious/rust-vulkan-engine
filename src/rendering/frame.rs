@@ -47,7 +47,7 @@ impl Frame {
 
     pub fn init_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) -> () {
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
-            self.device.clone(),
+            &buffer_manager.command_buffer_allocator,
             active_queue_family_index,
             CommandBufferUsage::MultipleSubmit,
         ) 
