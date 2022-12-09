@@ -58,7 +58,7 @@ impl Renderer {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let vulkan_instance = get_vulkan_instance();
         let surface = WindowBuilder::new().build_vk_surface(&event_loop, vulkan_instance.clone()).unwrap();
-        let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+        let window = surface.object().unwrap().downcast::<Window>().unwrap();
         let viewport= Viewport {
             origin: [0.0, 0.0],
             dimensions: window.inner_size().into(),
