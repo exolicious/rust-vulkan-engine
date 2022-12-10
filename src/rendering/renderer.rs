@@ -1,5 +1,7 @@
 use std::{sync::Arc, cell::RefCell};
 
+use egui_winit_vulkano::Gui;
+
 use vulkano::{swapchain::{Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError, SwapchainAcquireFuture, PresentFuture, SwapchainPresentInfo}, 
     device::{Device, Queue, physical::{PhysicalDevice, PhysicalDeviceType}, DeviceCreateInfo, QueueCreateInfo, DeviceExtensions}, instance::Instance, 
     image::{SwapchainImage, ImageUsage}, render_pass::{RenderPass, Subpass}, 
@@ -34,7 +36,7 @@ pub struct Renderer {
     //vulkan_instance: Arc<Instance>,
     viewport: Viewport,
     pub surface: Arc<Surface>,
-    window: Arc<Window>,
+    /* window: Arc<Window>, */
     pub device: Arc<Device>,
     /* physical_device: Arc<PhysicalDevice>,
     queue_family_index: u32,
@@ -58,17 +60,16 @@ impl Renderer {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let vulkan_instance = get_vulkan_instance();
         let surface = WindowBuilder::new().build_vk_surface(&event_loop, vulkan_instance.clone()).unwrap();
-        let window = surface.object().unwrap().downcast::<Window>().unwrap();
         let viewport= Viewport {
             origin: [0.0, 0.0],
-            dimensions: window.inner_size().into(),
+            dimensions: surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size().into(),
             depth_range: 0.0..1.0,
         };
 
-        Self::init(vulkan_instance, viewport, surface, window)
+        Self::init(vulkan_instance, viewport, surface/* , window */)
     }
 
-    pub fn init(vulkan_instance: Arc<Instance>, viewport: Viewport, surface : Arc<Surface>, window: Arc<Window>) -> Self {
+    pub fn init(vulkan_instance: Arc<Instance>, viewport: Viewport, surface : Arc<Surface>/* , window: Arc<Window> */) -> Self {
         //this is just hard coded since we want this to only work with devices that support swapchains
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -78,7 +79,7 @@ impl Renderer {
        
         let (physical_device, queue_family_index) = Self::init_physical_device_and_queue_family_index(device_extensions.clone(), vulkan_instance.clone(), surface.clone());
         let (device, queues, active_queue) = Self::init_device_and_queues(device_extensions.clone(), queue_family_index.clone(), physical_device.clone());
-        let (swapchain, swapchain_images) = Self::init_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), device.clone(), window.clone());
+        let (swapchain, swapchain_images) = Self::init_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), device.clone()/* , window.clone() */);
         
         let render_pass = Self::create_render_pass(device.clone(), swapchain.clone());
 
@@ -104,7 +105,7 @@ impl Renderer {
             event_queue_next_frame,
             frames,
             buffer_manager,
-            window,
+           /*  window, */
             active_scene: None,
             pipeline: None,
             vertex_shader: None,
@@ -171,12 +172,12 @@ impl Renderer {
         (device, queues, queue)
     }
 
-    fn init_swapchain_and_swapchain_images(physical_device: Arc<PhysicalDevice>, surface: Arc<Surface>, device: Arc<Device>, window: Arc<Window>) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
+    fn init_swapchain_and_swapchain_images(physical_device: Arc<PhysicalDevice>, surface: Arc<Surface>, device: Arc<Device>/* , window: Arc<Window> */) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
         let caps = physical_device
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
     
-        let dimensions = window.inner_size();
+        let dimensions = surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
         let composite_alpha = caps.supported_composite_alpha.iter().next().unwrap();
         let image_format = Some(
             physical_device
@@ -225,7 +226,7 @@ impl Renderer {
     }
 
     pub fn init_pipeline(&mut self) -> () {
-        let new_dimensions = self.window.inner_size();
+        let new_dimensions = self.surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
         self.viewport.dimensions = new_dimensions.into();
         let pipeline = GraphicsPipeline::start()
             .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
@@ -290,7 +291,7 @@ impl Renderer {
     }
 
     pub fn recreate_swapchain_and_framebuffers(&mut self) -> () {
-        let new_dimensions = self.window.inner_size();
+        let new_dimensions = self.surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
         let (new_swapchain, new_swapchain_images) = match self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: new_dimensions.into(),
             ..self.swapchain.create_info()
@@ -308,13 +309,20 @@ impl Renderer {
 
     fn recreate_render_pass(&mut self) -> () {
         self.render_pass = Self::create_render_pass(self.device.clone(), self.swapchain.clone());
+
     }
 
-    pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, FlushError>  {
-        previous_future
+    pub fn get_future(&mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize, gui: &mut Gui) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, FlushError>  {
+        
+
+        let f = previous_future
             .join(acquire_future)
             .then_execute(self.active_queue.clone(), self.frames[acquired_swapchain_index].draw_command_buffer.as_ref().unwrap().clone())
-            .unwrap()
+            .unwrap();
+
+        let after_future = gui.draw_on_image(f, self.frames[acquired_swapchain_index].swapchain_image_view.clone());
+
+        after_future
             .then_swapchain_present(
                 self.active_queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), acquired_swapchain_index.try_into().unwrap())

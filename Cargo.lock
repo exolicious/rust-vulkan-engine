@@ -1487,7 +1487,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "cgmath",
- "egui-winit",
  "egui_winit_vulkano",
  "image",
  "nanoid",

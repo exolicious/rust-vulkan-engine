@@ -1,6 +1,7 @@
 use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator}, pipeline::{Pipeline, GraphicsPipeline}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, memory::allocator::{StandardMemoryAllocator, GenericMemoryAllocatorCreateInfo}};
+use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator}, 
+    pipeline::{Pipeline, GraphicsPipeline}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, memory::allocator::{StandardMemoryAllocator}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
 use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
 use std::error::Error;
@@ -49,25 +50,23 @@ pub struct BufferManager {
     transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
     vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
-    needs_reallocation: bool,
     pub entites_to_update: HashMap<String, Transform>
 }
 
 impl BufferManager {
     pub fn new(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Self {
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(renderer_device.clone());
-        let command_buffer_allocator = StandardCommandBufferAllocator::new(renderer_device.clone(), StandardCommandBufferAllocatorCreateInfo{ ..Default::default() });
-        let memory_allocator = StandardMemoryAllocator::new(renderer_device.clone(), GenericMemoryAllocatorCreateInfo{ ..Default::default() }).unwrap();
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(renderer_device.clone(), StandardCommandBufferAllocatorCreateInfo { ..Default::default() });
+        let memory_allocator = StandardMemoryAllocator::new_default(renderer_device.clone());
         
-        let vertex_buffers = Self::initialize_vertex_buffers(renderer_device.clone(), &memory_allocator, swapchain_images_length);
-        let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), &memory_allocator, swapchain_images_length);
-        let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), &memory_allocator, swapchain_images_length);
+        let vertex_buffers = Self::initialize_vertex_buffers(&memory_allocator, swapchain_images_length);
+        let transform_buffers = Self::initialize_transform_buffers(&memory_allocator, swapchain_images_length);
+        let vp_camera_buffers = Self::initialize_vp_camera_buffers(&memory_allocator, swapchain_images_length);
 
         let mesh_accessors = Vec::new();
         let entities_transform_ids = Vec::new();
         let entites_to_update = HashMap::new();
         Self {
-            /* renderer_device, */
             mesh_accessors,
             vertex_buffers,
             transform_buffers,
@@ -77,12 +76,10 @@ impl BufferManager {
             command_buffer_allocator,
             memory_allocator,
             entites_to_update,
-            /* entity_transform_buffer_entries, */
-            needs_reallocation: false,
         }
     }
     
-    fn initialize_vertex_buffers(renderer_device: Arc<Device>, memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
+    fn initialize_vertex_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
         let mut vertex_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
             let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
@@ -101,7 +98,7 @@ impl BufferManager {
         vertex_buffers
     }
 
-    fn initialize_transform_buffers(renderer_device: Arc<Device>, memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
+    fn initialize_transform_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
             let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
@@ -120,7 +117,7 @@ impl BufferManager {
         transform_buffers
     }
     
-    fn initialize_vp_camera_buffers(renderer_device: Arc<Device>, memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
+    fn initialize_vp_camera_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
         let mut vp_matrix_buffers = Vec::new();
         let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
         for _ in 0..swapchain_images_length {

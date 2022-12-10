@@ -4,9 +4,7 @@ use std::sync::Arc;
 use cgmath::Vector3;
 use egui_winit_vulkano::Gui;
 use rand::Rng;
-use vulkano::swapchain::{Surface};
 use winit::event_loop::{EventLoop};
-use winit::window::Window;
 
 use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
@@ -28,7 +26,7 @@ pub struct Engine {
     entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
     pub next_swapchain_image_index: usize,
     scenes: Vec<Arc<Scene>>,
-    gui: Gui
+    pub gui: Gui
 }
 
 impl Engine {
@@ -58,7 +56,7 @@ impl Engine {
         }
     }
 
-    pub fn update_engine(&mut self) -> () {
+    pub fn update_engine(&mut self, ) -> () {
         //self.renderer.camera.as_mut().unwrap().update_position();
         for entity in &self.entities {
             let mut binding = entity.borrow_mut();
@@ -93,5 +91,9 @@ impl Engine {
                 self.entities.push(cube);
             }
         };
+    }
+
+    pub fn add_cubes_to_scene(&mut self, translations: Vec<Option<Vector3<f32>>>) -> () {
+
     }
 }
