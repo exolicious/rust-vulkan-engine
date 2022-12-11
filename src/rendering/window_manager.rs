@@ -1,5 +1,5 @@
 use std::{sync::Arc};
-use egui_winit_vulkano::egui::{self, ScrollArea, TextEdit, TextStyle};
+use egui_winit_vulkano::{egui::{self, ScrollArea, TextEdit, TextStyle}, Gui};
 use rand::Rng;
 use cgmath::Vector3;
 use vulkano::{sync::{FenceSignalFuture, GpuFuture, self, FlushError}, swapchain::{self, AcquireError}};
@@ -44,13 +44,14 @@ impl WindowManager {
 
         let mut code = CODE.to_owned();
 
+        let mut gui = Gui::new(&self.event_loop, self.engine.renderer.surface.clone(), None, self.engine.renderer.active_queue.clone(), false);
+
         self.event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {
                 event,
                 ..
             } => {
-                let pass_events_to_game = !self.engine.gui.update(&event); // if this returns false, then egui wont have to handle the request and we can pass it to the game
-                
+                let pass_events_to_game = !gui.update(&event); // if this returns false, then egui wont have to handle the request and we can pass it to the game
                 if pass_events_to_game {
                     match event {
                         WindowEvent::Resized(_) => self.engine.renderer.receive_event(EventResolveTiming::Immediate(RendererEvent::WindowResized)),
@@ -79,26 +80,12 @@ impl WindowManager {
                     }
                 }
             }
-            Event::RedrawRequested(window_id) if window_id == window_id => {
+            Event::RedrawRequested(_) => {
                 // Set immediate UI in redraw here
-                self.engine.gui.immediate_ui(|gui| {
+                gui.immediate_ui(|gui| {
                     let ctx = gui.context();
                     egui::CentralPanel::default().show(&ctx, |ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.add(egui::widgets::Label::new("Hi there!"));
-                            Self::sized_text(ui, "Rich Text", 32.0);
-                        });
-                        ui.separator();
-                        ui.columns(2, |columns| {
-                            ScrollArea::vertical().id_source("source").show(
-                                &mut columns[0],
-                                |ui| {
-                                    ui.add(
-                                        TextEdit::multiline(&mut code).font(TextStyle::Monospace),
-                                    );
-                                },
-                            );
-                        });
+                      
                     });
                 });
             }
@@ -132,7 +119,7 @@ impl WindowManager {
                     }
                     Some(fence) => fence.boxed(),
                 };
-                let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index as usize, &mut self.engine.gui);
+                let future = self.engine.renderer.get_future(previous_future, acquire_future, swapchain_image_index as usize, &mut gui);
 
                 fences[swapchain_image_index as usize] = match future {
                     Ok(value) => {

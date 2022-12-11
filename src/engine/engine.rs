@@ -26,7 +26,6 @@ pub struct Engine {
     entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
     pub next_swapchain_image_index: usize,
     scenes: Vec<Arc<Scene>>,
-    pub gui: Gui
 }
 
 impl Engine {
@@ -43,16 +42,12 @@ impl Engine {
 
         let mut scenes = Vec::new();
         scenes.push(scene_1);
-
-
-        let mut gui = Gui::new(&event_loop, renderer.surface.clone(), None, renderer.active_queue.clone(), false);
         
         Self {
             renderer,
             entities,
             next_swapchain_image_index: 0,
             scenes,
-            gui
         }
     }
 
