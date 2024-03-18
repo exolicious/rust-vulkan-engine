@@ -3,8 +3,9 @@ use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, Deref
 use bytemuck::{Zeroable, Pod};
 use cgmath::Vector3;
 use rand::Rng;
+use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VertexMacro};
 
-use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::{Entity, RegisterToBuffer, EntityUpdateAction}};
+use crate::{engine::general_traits::{Entity, TickAction}, physics::physics_traits::{HasTransform, Movable, Transform}};
 
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
@@ -13,12 +14,12 @@ use nanoid::nanoid;
 
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Debug, Zeroable, Pod)]
+#[derive(Default, Copy, Clone, Debug, BufferContents, VertexMacro)]
 pub struct Vertex {
+    #[format(R32G32B32_SFLOAT)]
     pub position: [f32; 3],
     //pub color: [f32; 4]
 }
-vulkano::impl_vertex!(Vertex, position);
 
 impl Deref for Vertex {
     type Target = [f32; 3];
@@ -117,14 +118,10 @@ impl HasTransform for Cube {
 }
 
 impl Entity for Cube {
-    fn get_id(&self) -> &String {
-        &self.id
-    }
-
-    fn update(&mut self) -> EntityUpdateAction {
+    fn tick(&mut self) -> Option<TickAction> {
         let amount: f32 = rand::thread_rng().gen_range(-0.02_f32..0.02_f32);
         self.move_x(amount);
-        EntityUpdateAction::HasMoved(self.get_id().to_string(), self.transform)
+        Some(TickAction::HasMoved(self.transform))
     }
 }
 

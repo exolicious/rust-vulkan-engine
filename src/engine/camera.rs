@@ -2,7 +2,7 @@ use crate::{physics::physics_traits::{Transform, Movable}, engine::general_trait
 use cgmath::{Vector3, Matrix4, SquareMatrix, Deg, InnerSpace};
 use nanoid::nanoid;
 
-use super::general_traits::EntityUpdateAction;
+use super::general_traits::{TickAction};
 
 #[derive(Debug, Clone)]
 pub struct Camera {
@@ -41,11 +41,8 @@ impl Camera {
 }
 
 impl Entity for Camera {
-    fn get_id(&self) -> &String {
-        &self.id
-    }
-    fn update(self: &mut Camera) -> EntityUpdateAction {
-        EntityUpdateAction::None
+    fn tick(self: &mut Camera) -> Option<TickAction> {
+        None
     }
 }
 

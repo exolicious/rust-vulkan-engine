@@ -1,15 +1,13 @@
 use std::{sync::Arc, cell::RefCell};
 
-use vulkano::{image::{SwapchainImage, view::ImageView}, render_pass::{Framebuffer, RenderPass, FramebufferCreateInfo}, device::Device, 
-    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}}, 
-    pipeline::{GraphicsPipeline, PipelineBindPoint, Pipeline, graphics::render_pass}};
+use vulkano::{command_buffer::{allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}, AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents, SubpassEndInfo}, device::Device, image::{view::ImageView, Image}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass}};
 use winit::window::Window;
 
 use super::{buffer_manager::BufferManager};
 
 pub struct Frame {
-    swapchain_image: Arc<SwapchainImage>,
-    pub swapchain_image_view: Arc<ImageView<SwapchainImage>>,
+    swapchain_image: Arc<Image>,
+    pub swapchain_image_view: Arc<ImageView>,
     device: Arc<Device>, 
     swapchain_image_index: usize,
     pipeline: Arc<GraphicsPipeline>, 
@@ -18,7 +16,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<SwapchainImage>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Self {
+    pub fn new(swapchain_image: Arc<Image>, device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_image_index: usize) -> Self {
         let swapchain_image_view =  ImageView::new_default(swapchain_image.clone()).unwrap();
         Self {
             swapchain_image,    
@@ -31,7 +29,7 @@ impl Frame {
         }
     }
 
-    pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) {
+    pub fn init(&mut self, render_pass: Arc<RenderPass>, active_queue_family_index: u32, buffer_manager: &BufferManager) {
         self.init_framebuffer(render_pass);
         self.init_command_buffer(active_queue_family_index, buffer_manager);
     }
@@ -48,7 +46,7 @@ impl Frame {
         self.framebuffer = Some(framebuffer);
     }
 
-    pub fn init_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &Box<BufferManager>) -> () {
+    pub fn init_command_buffer(&mut self, active_queue_family_index: u32, buffer_manager: &BufferManager) -> () {
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             &buffer_manager.command_buffer_allocator,
             active_queue_family_index,
@@ -68,11 +66,13 @@ impl Frame {
                     clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
                     ..RenderPassBeginInfo::framebuffer(self.framebuffer.as_ref().unwrap().clone())
                 },
-                SubpassContents::Inline,
+                vulkano::command_buffer::SubpassBeginInfo { ..Default::default() }
             )
             .unwrap()
             .bind_pipeline_graphics(self.pipeline.clone())
+            .unwrap()
             .bind_vertex_buffers(0, vertex_buffer)
+            .unwrap()
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 self.pipeline.layout().clone(),
@@ -84,19 +84,21 @@ impl Frame {
                 let builder = buffer_manager.mesh_accessors.iter().fold(builder, |builder, mesh_accessor| {
                     println!("instance count: {}, first index: {}, last index: {}", mesh_accessor.instance_count, mesh_accessor.first_index, mesh_accessor.last_index);
                     builder
-                        .draw(mesh_accessor.vertex_count.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
                         .unwrap()
+                        .draw(mesh_accessor.vertex_count.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
                 });
                 builder
-                .end_render_pass()
+                .unwrap()
+                .end_render_pass(SubpassEndInfo::default())
                 .unwrap();
             }
             else {
                 builder
-                .end_render_pass()
+                .unwrap()
+                .end_render_pass(SubpassEndInfo::default())
                 .unwrap();
             }
-        let command_buffer = Arc::new(command_buffer_builder.build().unwrap());
+        let command_buffer = command_buffer_builder.build().unwrap();
         self.draw_command_buffer = Some(command_buffer);
     }
 }

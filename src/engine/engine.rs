@@ -2,17 +2,18 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use cgmath::Vector3;
+use egui_winit_vulkano::egui::Window;
 use egui_winit_vulkano::Gui;
 use rand::Rng;
 use winit::event_loop::{EventLoop};
 
 use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
-use crate::rendering::renderer::{RendererEvent, EventResolveTiming};
-use crate::rendering::rendering_traits::{HasMesh, RenderableEntity};
+use crate::rendering::renderer::{EntityUpdateInfo, EventResolveTiming, HasMovedInfo, RendererBuilder, RendererEvent};
+use crate::rendering::rendering_traits::{HasMesh, RenderableEntity, Visibility};
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
 
-use super::general_traits::EntityUpdateAction;
+use super::general_traits::{TickAction};
 use super::scene::Scene;
 
 pub struct EntityToBufferRegisterData {
@@ -29,16 +30,28 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(event_loop: &EventLoop<()>) -> Self {
-        let mut renderer = Renderer::new(&event_loop);
+    pub fn new(event_loop: &EventLoop<()>, window: Window) -> Self {
+        
+        let mut renderer_builder = RendererBuilder::new();
+        let mut renderer = renderer_builder.get_renderer();
+        renderer.set_builder(Box::new(renderer_builder));
+
+        renderer_builder
+            .build_device_extensions()
+            .build_physical_device_and_queue_family_index()
+            .build_device_and_queues()
+            .build_swapchain_and_swapchain_images()
+            .build_render_pass()
+            .build_buffer_manager()
+            .build_shaders()
+            .build_pipeline()
+            .build_frames();
+        
+        
         let entities = Vec::new();
-
         let scene_1 = Arc::new(Scene::new());
-
-        let shaders = Shaders::load(renderer.device.clone()).unwrap();
         
         renderer.set_active_scene(scene_1.clone());
-        renderer.build(shaders.vertex_shader, shaders.fragment_shader);
 
         let mut scenes = Vec::new();
         scenes.push(scene_1);
@@ -51,21 +64,32 @@ impl Engine {
         }
     }
 
-    pub fn update_engine(&mut self, ) -> () {
+    pub fn tick(&mut self) -> () {
         //self.renderer.camera.as_mut().unwrap().update_position();
-        for entity in &self.entities {
+        let mut entities_tick_infos: Vec<EntityUpdateInfo> = Vec::new();
+        for (id, entity) in self.entities.iter().enumerate() {
             let mut binding = entity.borrow_mut();
-            let entity_update_info = binding.update();
+            let entity_update_info = binding.tick();
             match entity_update_info {
-                EntityUpdateAction::HasMoved(id, transform) => { self.renderer.buffer_manager.entites_to_update.insert(id, transform); }
-                EntityUpdateAction::None => todo!(),
+                Some(TickAction::HasMoved(transform)) => { 
+                    let transform_buffer_info = HasMovedInfo {
+                        entity_id: id,
+                        new_transform: transform
+                    };
+                    entities_tick_infos.push(EntityUpdateInfo::HasMoved(transform_buffer_info));
+                },
+                Some(TickAction::ChangedVisibility(Visibility)) => {
+                    entities_tick_infos.push(EntityUpdateInfo::ChangedVisibility(Visibility));
+                }
+                None => {},
             }
         }
+        self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntitiesUpdated(entities_tick_infos))); 
     }
 
     pub fn update_graphics(&mut self) -> () {
         self.renderer.work_off_queue(self.next_swapchain_image_index);
-        self.renderer.buffer_manager.update_buffers(self.next_swapchain_image_index);
+        //self.renderer.update_buffers(self.next_swapchain_image_index);
     }
 
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {

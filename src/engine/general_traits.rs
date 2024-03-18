@@ -1,15 +1,14 @@
 use std::{error::Error, sync::Arc};
 
-use crate::{rendering::buffer_manager::BufferManager, physics::physics_traits::Transform};
+use crate::{physics::physics_traits::Transform, rendering::{buffer_manager::BufferManager, rendering_traits::Visibility}};
 
-pub enum EntityUpdateAction {
-    None,
-    HasMoved(String, Transform),
+pub enum TickAction {
+    HasMoved(Transform),
+    ChangedVisibility(Visibility)
 }
 
 pub trait Entity {
-    fn get_id(& self) -> &String;
-    fn update(&mut self) -> EntityUpdateAction;
+    fn tick(&mut self) -> Option<TickAction>;
 }
 
 pub trait RegisterToBuffer {

@@ -1,9 +1,8 @@
 use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator}, 
-    pipeline::{Pipeline, GraphicsPipeline}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, memory::allocator::{StandardMemoryAllocator}};
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
-use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
+use super::{primitives::{Mesh, Vertex}, rendering_traits::{RenderableEntity, Visibility}};
 use std::error::Error;
 use core::fmt::Error as ErrorVal;
 
@@ -42,26 +41,31 @@ const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(12) as usize; // 32 insta
 pub struct BufferManager {
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
-    pub memory_allocator: StandardMemoryAllocator,
+    pub memory_allocator: Arc<StandardMemoryAllocator>,
     /*     renderer_device:  Arc<Device>, */
     pub mesh_accessors: Vec<MeshAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
-    pub vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
-    transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
-    vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>, // needs to be a push constant sooner or later
+    pub vertex_buffers: Vec<Subbuffer<[Vertex]>>,
+    transform_buffers: Vec<Subbuffer<[[[f32; 4]; 4]]>>,
+    vp_camera_buffers:  Vec<Subbuffer<[[f32; 4]; 4]>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
     pub entites_to_update: HashMap<String, Transform>
 }
 
 impl BufferManager {
-    pub fn new(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Self {
-        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(renderer_device.clone());
-        let command_buffer_allocator = StandardCommandBufferAllocator::new(renderer_device.clone(), StandardCommandBufferAllocatorCreateInfo { ..Default::default() });
-        let memory_allocator = StandardMemoryAllocator::new_default(renderer_device.clone());
+    pub fn new(device: Arc<Device>, swapchain_images_length: usize) -> Self {
+        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
+            device.clone(), 
+            StandardDescriptorSetAllocatorCreateInfo::default());
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(
+            device.clone(),
+            StandardCommandBufferAllocatorCreateInfo::default(),
+        );
+        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         
-        let vertex_buffers = Self::initialize_vertex_buffers(&memory_allocator, swapchain_images_length);
-        let transform_buffers = Self::initialize_transform_buffers(&memory_allocator, swapchain_images_length);
-        let vp_camera_buffers = Self::initialize_vp_camera_buffers(&memory_allocator, swapchain_images_length);
+        let vertex_buffers = Self::initialize_vertex_buffers(memory_allocator.clone(), swapchain_images_length);
+        let transform_buffers = Self::initialize_transform_buffers(memory_allocator.clone(), swapchain_images_length);
+        let vp_camera_buffers = Self::initialize_vp_camera_buffers(memory_allocator.clone(), swapchain_images_length);
 
         let mesh_accessors = Vec::new();
         let entities_transform_ids = Vec::new();
@@ -79,17 +83,20 @@ impl BufferManager {
         }
     }
     
-    fn initialize_vertex_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
+    fn initialize_vertex_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[Vertex]>> {
         let mut vertex_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
             let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
-            let vertex_buffer = CpuAccessibleBuffer::from_iter(
-                memory_allocator,
-                BufferUsage {
-                    vertex_buffer: true,
+            let vertex_buffer = Buffer::from_iter(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::UNIFORM_BUFFER,
                     ..Default::default()
                 },
-                false,
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
                 initializer_data.into_iter()
             )
             .unwrap();
@@ -98,17 +105,20 @@ impl BufferManager {
         vertex_buffers
     }
 
-    fn initialize_transform_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
+    fn initialize_transform_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[[f32; 4]; 4]]>> {
         let mut transform_buffers = Vec::new();
         for _ in 0..swapchain_images_length {
             let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
-            let uniform_buffer = CpuAccessibleBuffer::from_iter(
-                memory_allocator,
-                BufferUsage {
-                    uniform_buffer: true,
+            let uniform_buffer = Buffer::from_iter(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::UNIFORM_BUFFER,
                     ..Default::default()
                 },
-                false,
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
                 transform_initial_data.into_iter()
             )
             .unwrap();
@@ -117,17 +127,20 @@ impl BufferManager {
         transform_buffers
     }
     
-    fn initialize_vp_camera_buffers(memory_allocator: &StandardMemoryAllocator, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
+    fn initialize_vp_camera_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[f32; 4]; 4]>> {
         let mut vp_matrix_buffers = Vec::new();
         let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
         for _ in 0..swapchain_images_length {
-            let uniform_buffer: Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>> = CpuAccessibleBuffer::from_data(
-                memory_allocator,
-                BufferUsage {
-                    uniform_buffer: true,
+            let uniform_buffer = Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::UNIFORM_BUFFER,
                     ..Default::default()
                 },
-                false,
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
                 projection_view_matrix.into(),
             )
             .unwrap();
@@ -205,17 +218,19 @@ impl BufferManager {
 
     pub fn update_buffers(&mut self, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut entity_model_matrices = Vec::new();
-        for (offset, (id, transform)) in self.entites_to_update.iter().enumerate() {
-            entity_model_matrices.push(transform.model_matrix())
+        let mut last_index = 0;
+        for (i, (id, transform)) in self.entites_to_update.iter().enumerate() {
+            if i - last_index > 1 { 
+                self.copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, next_swapchain_image_index)?;
+                self.entites_to_update.clear();
+            }
+            entity_model_matrices.push(transform.model_matrix());
+            last_index = i;
         }
-        //todo: it is not always guaranteed that the first index will be the 0, we might have different clusters of entities, whose model matrices will not necessarily be adjacent
-        self.copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, next_swapchain_image_index)?;
-        self.entites_to_update.clear();
-    
         Ok(())
     }
 
-    fn copy_transform_data_slice_to_buffer(& self,entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+    pub fn copy_transform_data_slice_to_buffer(& self,entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
         write_lock[entity_transforms_first_index..entity_transforms_last_index].copy_from_slice(entity_model_matrices);
         //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
@@ -260,6 +275,7 @@ impl BufferManager {
             &self.descriptor_set_allocator,
             layout.clone(),
             [WriteDescriptorSet::buffer(0, self.vp_camera_buffers[next_swapchain_image_index].clone())], // 0 is the binding
+            []
         )
         .unwrap()
     }
@@ -270,6 +286,7 @@ impl BufferManager {
             &self.descriptor_set_allocator,
             layout.clone(),
             [WriteDescriptorSet::buffer(0, self.transform_buffers[next_swapchain_image_index].clone())],
+            []
         )
         .unwrap()
     }

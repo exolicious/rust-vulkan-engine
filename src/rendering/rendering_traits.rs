@@ -8,6 +8,11 @@ pub trait HasMesh : Entity  {
     fn get_mesh(& self) -> &Mesh;
 }
 
+pub enum Visibility {
+    Visible,
+    Invisible
+}
+
 pub trait UpdateGraphics : Entity {
     fn update_graphics(& self, swapchain_image_index: usize) -> ();
 }
