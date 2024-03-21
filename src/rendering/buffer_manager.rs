@@ -2,51 +2,21 @@ use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
-use super::{primitives::{Mesh, Vertex}, rendering_traits::{RenderableEntity, Visibility}};
+use super::{mesh_accessor::{MeshAccessor, MeshAccessorAddEntityResult}, primitives::{Mesh, Vertex}, rendering_traits::RenderableEntity, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffers};
 use std::error::Error;
 use core::fmt::Error as ErrorVal;
 
-#[derive(Debug, Clone, Copy)]
-pub struct MeshAccessor {
-    pub mesh_hash: u64,
-    pub first_index: usize,
-    pub first_instance: usize,
-    pub instance_count: usize,
-    pub vertex_count: usize,
-    pub last_index: usize,
-}
 
-impl MeshAccessor {
-    pub fn add_entity(&mut self) {
-        self.instance_count += 1;
-    }
-}
-
-impl Default for MeshAccessor {
-    fn default() -> Self {
-        Self {
-           mesh_hash: 0,
-           first_index: 0,
-           first_instance: 0,
-           instance_count: 0,
-           vertex_count: 0,
-           last_index: 0
-        }
-    }
-}
-
-const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
-const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(12) as usize; // 32 instances
 
 pub struct BufferManager {
+    pub mesh_accessor: MeshAccessor,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     /*     renderer_device:  Arc<Device>, */
-    pub mesh_accessors: Vec<MeshAccessor>,
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
-    pub vertex_buffers: Vec<Subbuffer<[Vertex]>>,
-    transform_buffers: Vec<Subbuffer<[[[f32; 4]; 4]]>>,
+    pub vertex_buffers: VertexBuffers,
+    transform_buffers: TransformBuffers,
     vp_camera_buffers:  Vec<Subbuffer<[[f32; 4]; 4]>>, // needs to be a push constant sooner or later
     pub entities_transform_ids: Vec<String>,
     pub entites_to_update: HashMap<String, Transform>
@@ -63,15 +33,15 @@ impl BufferManager {
         );
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         
-        let vertex_buffers = Self::initialize_vertex_buffers(memory_allocator.clone(), swapchain_images_length);
-        let transform_buffers = Self::initialize_transform_buffers(memory_allocator.clone(), swapchain_images_length);
+        let vertex_buffers = VertexBuffers::new(memory_allocator.clone(), swapchain_images_length);
+        let transform_buffers = TransformBuffers::new(memory_allocator.clone(), swapchain_images_length);
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(memory_allocator.clone(), swapchain_images_length);
 
-        let mesh_accessors = Vec::new();
+        let mesh_accessor = MeshAccessor::default();
         let entities_transform_ids = Vec::new();
         let entites_to_update = HashMap::new();
         Self {
-            mesh_accessors,
+            mesh_accessor,
             vertex_buffers,
             transform_buffers,
             vp_camera_buffers,
@@ -82,51 +52,7 @@ impl BufferManager {
             entites_to_update,
         }
     }
-    
-    fn initialize_vertex_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[Vertex]>> {
-        let mut vertex_buffers = Vec::new();
-        for _ in 0..swapchain_images_length {
-            let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
-            let vertex_buffer = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                initializer_data.into_iter()
-            )
-            .unwrap();
-            vertex_buffers.push(vertex_buffer);
-        }
-        vertex_buffers
-    }
 
-    fn initialize_transform_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[[f32; 4]; 4]]>> {
-        let mut transform_buffers = Vec::new();
-        for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
-            let uniform_buffer = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                transform_initial_data.into_iter()
-            )
-            .unwrap();
-            transform_buffers.push(uniform_buffer);
-        }
-        transform_buffers
-    }
-    
     fn initialize_vp_camera_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[f32; 4]; 4]>> {
         let mut vp_matrix_buffers = Vec::new();
         let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
@@ -155,7 +81,7 @@ impl BufferManager {
         let entity_id = binding.get_id();
         let entity_transform = binding.get_transform();
 
-        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
+        match self.mesh_accessors.iter().find(|accessor| accessor.name == entity_mesh.name) {
             Some(existing_mesh_accessor) => {
                 self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &entity_mesh.data, next_swapchain_image_index)?;
                 self.update_entity_transform_buffer(entity_id, entity_transform, next_swapchain_image_index)?;
@@ -180,37 +106,13 @@ impl BufferManager {
         Ok(())
     }
     
-    fn add_entity_to_mesh_accessor(&mut self, entity_mesh: &Mesh, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
-            Some(existing_mesh_accessor) => {
-                existing_mesh_accessor.add_entity();
-            },
-            None => {
-                let mut mesh_accessor = match self.mesh_accessors.iter().last() {
-                    Some(previous_accessor) => {
-                        MeshAccessor {
-                            mesh_hash: entity_mesh.hash, 
-                            first_index: previous_accessor.last_index, 
-                            vertex_count: entity_mesh.vertex_count, 
-                            last_index: previous_accessor.last_index + entity_mesh.vertex_count,
-                            first_instance: previous_accessor.first_instance + previous_accessor.instance_count,
-                            instance_count: 0
-                        }
-                    }
-                    None =>  {
-                        MeshAccessor { 
-                            mesh_hash: entity_mesh.hash, 
-                            vertex_count: entity_mesh.vertex_count, 
-                            last_index: entity_mesh.vertex_count,
-                            first_index: 0,
-                            first_instance: 0,
-                            instance_count: 0
-                        }
-                    }
-                };
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_accessor, &entity_mesh.data, next_swapchain_image_index)?;
-                mesh_accessor.add_entity();
-                self.mesh_accessors.push(mesh_accessor); // if the copying fails, this mesh accessor will just get dropped at the end of this function and wont get pushed
+    fn add_entity_to_mesh_accessor(&mut self, entity_mesh: Mesh, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let first_index = self.mesh_accessor.get_last_vertex_index();
+        let entity_add_result: MeshAccessorAddEntityResult = self.mesh_accessor.add_entity(entity_mesh);
+        match entity_add_result {
+            MeshAccessorAddEntityResult::AppendedToExistingMesh => {},
+            MeshAccessorAddEntityResult::CreatedNewMesh(mesh) => {
+                self.copy_blueprint_mesh_data_to_vertex_buffer(first_index, &mesh.data, next_swapchain_image_index)?;
             }
         }
         Ok(())
@@ -247,10 +149,10 @@ impl BufferManager {
         }
     }
 
-    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_accessor: & MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
-        let mut write_lock =  main_vertex_buffer.write()?;
-        write_lock[mesh_accessor.first_index..mesh_accessor.last_index].copy_from_slice(mesh_data.as_slice());
+    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, first_index: usize, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let offline_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
+        let mut write_lock =  offline_vertex_buffer.write()?;
+        write_lock[first_index..mesh_data.iter().len()].copy_from_slice(mesh_data.as_slice());
         //println!("Successfully copied mesh data: {:?} to vertex buffer with index: {}", mesh_data.as_slice(), next_swapchain_image_index);
         Ok(())
     }

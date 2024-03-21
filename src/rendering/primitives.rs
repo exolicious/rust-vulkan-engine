@@ -6,7 +6,7 @@ use rand::Rng;
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VertexMacro};
 
 use crate::{engine::general_traits::{Entity, TickAction}, physics::physics_traits::{HasTransform, Movable, Transform}};
-
+use core::hash::Hash;
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
 use nanoid::nanoid;
@@ -39,34 +39,41 @@ impl DerefMut for Vertex {
 
 #[derive(Debug, Clone)]
 pub struct Mesh {
+    pub name: String,
     pub data: Vec<Vertex>,
-    pub vertex_count: usize,
-    pub hash: u64
 }
 
 impl Mesh {
-    pub fn new(data: Vec<Vertex>) -> Self {
-        let len = data.len();
-        let hash = Self::calculate_mesh_hash(&data);
+    pub fn new(data: Vec<Vertex>, name: String) -> Self {
         Self {
+            name,
             data,
-            vertex_count: len,
-            hash: hash
         }
     }
+}
 
-    fn calculate_mesh_hash(data: &Vec<Vertex>) -> u64 {
+impl PartialEq for Mesh {
+    fn eq(&self, other: &Self) -> bool {
         let mut hasher = DefaultHasher::new();
-        
+        self.hash(& mut hasher) == other.hash(& mut hasher)
+    }
+}
+
+impl Eq for Mesh {
+
+}
+
+impl Hash for Mesh {
+    fn hash<H>(&self, state: &mut H) where H: Hasher { 
         let mut result = Vec::new();
-        for triangle in data {
+        for triangle in self.data {
             for j in triangle.position {
                 let rounded_coord =  (j * 100_f32) as u8;
                 result.push(rounded_coord);
             }
         }
-        hasher.write(&result);
-        hasher.finish()
+        state.write(&result);
+        state.finish();
     }
 }
 
@@ -177,7 +184,7 @@ impl HasMesh for Cube {
                 result.push(triangle.vertices[i])
             }
         }
-        self.mesh = Some(Mesh::new(result));
+        self.mesh = Some(Mesh::new(result, "Cube".to_owned()));
     }
 
     fn get_data(& self) -> Vec<Triangle> {

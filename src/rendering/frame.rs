@@ -81,11 +81,11 @@ impl Frame {
             );
 
             if buffer_manager.mesh_accessors.len() > 0 {
-                let builder = buffer_manager.mesh_accessors.iter().fold(builder, |builder, mesh_accessor| {
+                let builder = buffer_manager.mesh_accessor.meshes.iter().fold(builder, |builder, mesh_accessor| {
                     println!("instance count: {}, first index: {}, last index: {}", mesh_accessor.instance_count, mesh_accessor.first_index, mesh_accessor.last_index);
                     builder
                         .unwrap()
-                        .draw(mesh_accessor.vertex_count.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
+                        .draw(mesh_accessor.meshes.try_into().unwrap(), mesh_accessor.instance_count.try_into().unwrap(), mesh_accessor.first_index.try_into().unwrap(), mesh_accessor.first_instance.try_into().unwrap())
                 });
                 builder
                 .unwrap()

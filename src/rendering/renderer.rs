@@ -274,7 +274,7 @@ pub struct Renderer {
     viewport: Option<Viewport>,
     surface: Option<Arc<Surface>>,
     window: Option<Arc<Window>>, 
-    device: Option<Arc<Device>>,
+    pub device: Option<Arc<Device>>,
     physical_device: Option<Arc<PhysicalDevice>>,
     queue_family_index: u32,
     active_queue: Option<Arc<Queue>>,
@@ -414,7 +414,7 @@ impl Renderer {
                     let mut entity_model_matrices = Vec::new();
                     let mut last_index = 0;
                     if has_moved_info.entity_id - last_index > 1 { 
-                        self.buffer_manager.unwrap().copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, self.next_swapchain_image_index)?;
+                        self.buffer_manager.unwrap().copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, self.next_swapchain_image_index);
                         entity_model_matrices.clear();
                     }
                     entity_model_matrices.push(has_moved_info.new_transform.model_matrix());

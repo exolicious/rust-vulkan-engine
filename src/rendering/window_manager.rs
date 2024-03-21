@@ -154,7 +154,7 @@ impl WindowManager {
                                 let previous_future = match fences[previous_fence_i].clone() {
                                     None => {
                                         let mut now =
-                                            sync::now(self.engine.renderer.device.clone());
+                                            sync::now(self.engine.renderer.device.unwrap().clone());
                                         now.cleanup_finished();
                                         now.boxed()
                                     }
