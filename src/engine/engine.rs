@@ -9,12 +9,13 @@ use winit::event_loop::{EventLoop};
 
 use crate::physics::physics_traits::{Transform};
 use crate::rendering::primitives::Mesh;
-use crate::rendering::renderer::{EntityUpdateInfo, EventResolveTiming, HasMovedInfo, RendererBuilder, RendererEvent};
+use crate::rendering::renderer::{EngineEvent, EntityUpdateInfo, HasMovedInfo};
 use crate::rendering::rendering_traits::{HasMesh, RenderableEntity, Visibility};
 use crate::rendering::{{primitives::Cube}, renderer::Renderer, shaders::Shaders};
 
 use super::general_traits::{TickAction};
 use super::scene::Scene;
+use crate::physics::physics_traits::HasTransform;
 
 pub struct EntityToBufferRegisterData {
     pub id: String,
@@ -23,53 +24,36 @@ pub struct EntityToBufferRegisterData {
 }
 
 pub struct Engine {
-    pub renderer: Renderer,
-    entities: Vec<Arc<RefCell<dyn RenderableEntity>>>,
+    entities: Vec<Box<dyn RenderableEntity>>,
     pub next_swapchain_image_index: usize,
-    scenes: Vec<Arc<Scene>>,
+   // scenes: Vec<Arc<Scene>>,
+    pub event_queue: Vec<EngineEvent>
 }
 
 impl Engine {
-    pub fn new(event_loop: &EventLoop<()>, window: Window) -> Self {
-        
-        let mut renderer_builder = RendererBuilder::new();
-        let mut renderer = renderer_builder.get_renderer();
-        renderer.set_builder(Box::new(renderer_builder));
-
-        renderer_builder
-            .build_device_extensions()
-            .build_physical_device_and_queue_family_index()
-            .build_device_and_queues()
-            .build_swapchain_and_swapchain_images()
-            .build_render_pass()
-            .build_buffer_manager()
-            .build_shaders()
-            .build_pipeline()
-            .build_frames();
-        
+    pub fn new() -> Self {
         
         let entities = Vec::new();
-        let scene_1 = Arc::new(Scene::new());
-        
-        renderer.set_active_scene(scene_1.clone());
 
-        let mut scenes = Vec::new();
-        scenes.push(scene_1);
+        let event_queue = Vec::new();
         
         Self {
-            renderer,
             entities,
             next_swapchain_image_index: 0,
-            scenes,
+           // scenes,
+            event_queue
         }
+    }
+
+    pub fn set_active_scene(& mut self, scene: Arc<Scene>) {
+        self.event_queue.push(EngineEvent::ChangedActiveScene(scene));
     }
 
     pub fn tick(&mut self) -> () {
         //self.renderer.camera.as_mut().unwrap().update_position();
         let mut entities_tick_infos: Vec<EntityUpdateInfo> = Vec::new();
-        for (id, entity) in self.entities.iter().enumerate() {
-            let mut binding = entity.borrow_mut();
-            let entity_update_info = binding.tick();
+        for (id, entity) in self.entities.iter_mut().enumerate() {
+            let entity_update_info = entity.tick();
             match entity_update_info {
                 Some(TickAction::HasMoved(transform)) => { 
                     let transform_buffer_info = HasMovedInfo {
@@ -84,12 +68,7 @@ impl Engine {
                 None => {},
             }
         }
-        self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntitiesUpdated(entities_tick_infos))); 
-    }
-
-    pub fn update_graphics(&mut self) -> () {
-        self.renderer.work_off_queue(self.next_swapchain_image_index);
-        //self.renderer.update_buffers(self.next_swapchain_image_index);
+        self.event_queue.push(EngineEvent::EntitiesUpdated(entities_tick_infos)); 
     }
 
     pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
@@ -98,15 +77,17 @@ impl Engine {
                 let rand_x: f32 = rand::thread_rng().gen_range(-0.5_f32..0.5_f32);
                 let rand_y: f32 = rand::thread_rng().gen_range(-0.5_f32..1_f32);
                 let rand_z: f32 = rand::thread_rng().gen_range(-2_f32..-0.7_f32);
-                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation, ..Default::default()})));
-                cube.borrow_mut().set_mesh();
-                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
+                let mut cube = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation, ..Default::default()}));
+                let mesh = cube.get_mesh("Cube".to_owned());
+                let entity_index = self.entities.len();
+                self.event_queue.push(EngineEvent::EntityAdded(cube.get_transform(), mesh, entity_index));
                 self.entities.push(cube);
             }
             None => {
-                let cube = Arc::new(RefCell::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() })));
-                cube.borrow_mut().set_mesh();
-                self.renderer.receive_event(EventResolveTiming::NextImage(RendererEvent::EntityAdded(cube.clone())));
+                let mut cube = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
+                let mesh = cube.get_mesh("Cube".to_owned());
+                let entity_index: usize = self.entities.len();
+                self.event_queue.push(EngineEvent::EntityAdded(cube.get_transform(), mesh, entity_index));
                 self.entities.push(cube);
             }
         };
@@ -114,5 +95,19 @@ impl Engine {
 
     pub fn add_cubes_to_scene(&mut self, translations: Vec<Option<Vector3<f32>>>) -> () {
 
+    }
+
+    pub fn work_off_event_queue(&mut self, renderer: & mut Renderer) {
+        let len = self.event_queue.len();
+        //work off the events
+        for _ in 0..len {
+            match self.event_queue.pop() { // ToDo: decide if fifo or lifo is the right way, for now lifo seems to work
+                Some(EngineEvent::EntityAdded(entity_transform, entity_mesh, entity_index)) => renderer.entity_added_handler(entity_transform, entity_mesh, entity_index),
+                Some(EngineEvent::ChangedActiveScene(active_scene)) => renderer.changed_active_scene_handler(active_scene),
+                //Some(RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index)) => self.synch_buffers_handler(most_up_to_date_buffer_index, entity),
+                Some(EngineEvent::EntitiesUpdated(updated_entities_infos)) => renderer.entities_updated_handler(updated_entities_infos),
+                _ => ()
+            }
+        }
     }
 }

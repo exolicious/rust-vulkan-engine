@@ -50,6 +50,10 @@ impl Mesh {
             data,
         }
     }
+
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
 }
 
 impl PartialEq for Mesh {
@@ -66,7 +70,7 @@ impl Eq for Mesh {
 impl Hash for Mesh {
     fn hash<H>(&self, state: &mut H) where H: Hasher { 
         let mut result = Vec::new();
-        for triangle in self.data {
+        for triangle in &self.data {
             for j in triangle.position {
                 let rounded_coord =  (j * 100_f32) as u8;
                 result.push(rounded_coord);
@@ -119,8 +123,8 @@ impl Cube {
 impl RenderableEntity for Cube {}
 
 impl HasTransform for Cube {
-    fn get_transform(&self) -> &Transform {
-        &self.transform
+    fn get_transform(&self) -> Transform {
+        self.transform
     }
 }
 
@@ -177,14 +181,14 @@ impl Movable for Cube {
 }
 
 impl HasMesh for Cube {
-    fn set_mesh(&mut self) -> () {
+    fn get_mesh(&mut self, name: String) -> Mesh {
         let mut result = Vec::new();
         for triangle in self.get_data() {
             for i in 0..triangle.vertices.len() {
                 result.push(triangle.vertices[i])
             }
         }
-        self.mesh = Some(Mesh::new(result, "Cube".to_owned()));
+        Mesh::new(result, name)
     }
 
     fn get_data(& self) -> Vec<Triangle> {
@@ -241,9 +245,5 @@ impl HasMesh for Cube {
         resulting_mesh.push(triangle_12);
 
         resulting_mesh
-    }
-    
-    fn get_mesh(& self) -> &Mesh {
-        self.mesh.as_ref().unwrap()
     }
 }

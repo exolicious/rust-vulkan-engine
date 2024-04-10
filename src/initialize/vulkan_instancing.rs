@@ -1,12 +1,16 @@
 use std::sync::Arc;
 use vulkano::{instance::{Instance, InstanceCreateInfo}, swapchain::Surface};
+use winit::event_loop::EventLoop;
 
-pub fn get_vulkan_instance() -> Arc<Instance> {
+pub fn get_vulkan_instance(event_loop: &EventLoop<()>) -> Arc<Instance> {
     let library = vulkano::VulkanLibrary::new().expect("no local Vulkan library/DLL");
-    //let required_extensions = vulkano_win::required_extensions(library);
+    let required_extensions = Surface::required_extensions(&event_loop);
     return Instance::new(
         library,
-        InstanceCreateInfo::default(),
+        InstanceCreateInfo {
+            enabled_extensions: required_extensions,
+            ..Default::default()
+        },
     )
     .expect("failed to create instance");
 }

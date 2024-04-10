@@ -46,5 +46,5 @@ pub trait Movable {
 }
 
 pub trait HasTransform {
-    fn get_transform(&self) -> &Transform;
+    fn get_transform(&self) -> Transform;
 }

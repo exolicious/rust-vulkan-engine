@@ -5,9 +5,8 @@ use super::primitives::Mesh;
 #[derive(Debug, Clone, Default)]
 pub struct MeshAccessor {
     pub meshes: Vec<Mesh>,
-    pub mesh_instance_count_map: HashMap<String, usize>,
-    pub first_index: usize,
-    pub first_instance: usize,
+    pub mesh_name_instance_count_map: HashMap<String, usize>,
+    pub mesh_name_first_vertex_index_map: HashMap<String, usize>,
 }
 
 pub enum MeshAccessorAddEntityResult {
@@ -16,27 +15,33 @@ pub enum MeshAccessorAddEntityResult {
 }
 
 impl MeshAccessor {
-    pub fn new() {
-
+    pub fn new() -> Self {
+        let meshes = Vec::new();
+        let mesh_name_instance_count_map = HashMap::new();
+        let mesh_name_first_vertex_index_map = HashMap::new();
+        Self {
+            meshes,
+            mesh_name_instance_count_map,
+            mesh_name_first_vertex_index_map
+        }
     }
 
     pub fn add_entity(&mut self, entity_mesh: Mesh) -> MeshAccessorAddEntityResult {
-        match self.mesh_instance_count_map.contains_key(&entity_mesh.name) {
+        match self.mesh_name_instance_count_map.contains_key(entity_mesh.get_name()) {
             true => {
-                *self.mesh_instance_count_map.get(&entity_mesh.name).unwrap() += 1;
+                *self.mesh_name_instance_count_map.get_mut(entity_mesh.get_name()).unwrap() += 1;
                 return MeshAccessorAddEntityResult::AppendedToExistingMesh;
             },
             false => { 
-                self.add_new_mesh(entity_mesh);
+                self.add_new_mesh(entity_mesh.clone());
                 return MeshAccessorAddEntityResult::CreatedNewMesh(entity_mesh);
             }
         }
     }
 
     fn add_new_mesh(&mut self, entity_mesh: Mesh) {
-        self.mesh_instance_count_map.insert(entity_mesh.name, 0usize);
+        self.mesh_name_instance_count_map.insert(entity_mesh.get_name().to_string(), 0usize);
         self.meshes.push(entity_mesh);
-        
     }
 
     pub fn get_last_vertex_index(&self) -> usize {
