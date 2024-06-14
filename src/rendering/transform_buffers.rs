@@ -61,7 +61,17 @@ impl TransformBuffers {
     }
 
     fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
+        let model_matrix =  entity_transform.model_matrix();
+        println!("Entity Translation x: {}", entity_transform.translation.x);
+        println!("Entity Translation y: {}", entity_transform.translation.y);
+        println!("Entity Translation z: {}", entity_transform.translation.z);
+        println!("model matrix: {:?}", model_matrix);
+        println!("Copied above entity transforms to uniform buffer with index: {}", next_swapchain_image_index);
+        let mut write_lock =  self.transform_buffers[0].write()?;
+        write_lock[entity_transform_index] = entity_transform.model_matrix();
+        let mut write_lock =  self.transform_buffers[1].write()?;
+        write_lock[entity_transform_index] = entity_transform.model_matrix();
+        let mut write_lock =  self.transform_buffers[2].write()?;
         write_lock[entity_transform_index] = entity_transform.model_matrix();
         //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
         Ok(())
@@ -83,7 +93,7 @@ impl TransformBuffers {
         return (most_up_to_date_buffer.clone(), buffers_to_update)
     }
 
-    pub fn get_newly_added_transform_indexes(& mut self) -> Option<&Vec<usize>> {
+    pub fn get_newly_added_transform_indexes(& self) -> Option<&Vec<usize>> {
         self.newly_added_transform_indexes.as_ref()
     }
     

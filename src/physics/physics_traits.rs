@@ -21,6 +21,7 @@ impl Transform {
         let scale_matrix = Matrix4::from_scale(1.);
         let translation_matrix = Matrix4::from_translation(self.translation);
         let model_matrix = translation_matrix * rotation_matrix * scale_matrix;
+        println!("{:?}", model_matrix);
         model_matrix.into()
     }
 }

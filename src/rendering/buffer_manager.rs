@@ -1,11 +1,10 @@
-use std::{collections::{HashMap}, sync::Arc, cell::RefCell};
+use std::{collections::{HashMap}, sync::Arc};
 use cgmath::{Matrix4, SquareMatrix};
 use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassEndInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, image::Image, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, RenderPass}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
-use super::{frame::Frame, primitives::Mesh, rendering_traits::RenderableEntity, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffers};
+use super::{frame::Frame, primitives::Mesh, rendering_traits::RenderableEntity, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffer};
 use std::error::Error;
 use core::fmt::Error as ErrorVal;
-
 
 
 pub struct BufferManager {
@@ -14,7 +13,7 @@ pub struct BufferManager {
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     /*     renderer_device:  Arc<Device>, */
    /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
-    pub vertex_buffers: VertexBuffers,
+    pub vertex_buffer: VertexBuffer,
     pub frames: Vec<Frame>,
     queue_family_index: u32,
     pub transform_buffers: TransformBuffers,
@@ -36,7 +35,7 @@ impl BufferManager {
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
         let frames = BufferManager::build_frames(device.clone(), pipeline.clone(), swapchain_images.clone(), render_pass.clone(), queue_family_index);
-        let vertex_buffers = VertexBuffers::new(memory_allocator.clone(), swapchain_images.len());
+        let vertex_buffer = VertexBuffer::new(memory_allocator.clone());
         let transform_buffers = TransformBuffers::new(memory_allocator.clone(), swapchain_images.len());
         let vp_camera_buffers = Self::initialize_vp_camera_buffers(memory_allocator.clone(), swapchain_images.len());
 
@@ -44,7 +43,7 @@ impl BufferManager {
         let entites_to_update = HashMap::new();
 
         Self {
-            vertex_buffers,
+            vertex_buffer,
             transform_buffers,
             vp_camera_buffers,
             entities_transform_ids,
@@ -97,8 +96,8 @@ impl BufferManager {
     }
 
     pub fn register_entity(&mut self, entity_transform: Transform, entity_mesh: Mesh, next_swapchain_image_index: usize, entity_index: usize) -> Result<(), Box<dyn Error>> {
-        self.vertex_buffers.bind_entity_mesh(entity_mesh, next_swapchain_image_index)?;
-        self.transform_buffers.bind_entity_transform(entity_transform, next_swapchain_image_index, entity_index);
+        self.vertex_buffer.bind_entity_mesh(entity_mesh, next_swapchain_image_index)?;
+        self.transform_buffers.bind_entity_transform(entity_transform, entity_index, next_swapchain_image_index).unwrap();
         Ok(())
     }
 
@@ -115,7 +114,7 @@ impl BufferManager {
         Ok(())
     }
 
-    pub fn copy_transform_data_slice_to_buffer(& self,entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+    pub fn copy_transform_data_slice_to_buffer(& self, entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
         write_lock[entity_transforms_first_index..entity_transforms_last_index].copy_from_slice(entity_model_matrices);
         //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
@@ -133,7 +132,12 @@ impl BufferManager {
     }
 
     pub fn copy_vp_camera_data(& self, camera: &Camera, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let mut write_lock = self.vp_camera_buffers[next_swapchain_image_index].write()?;
+        println!("{:?}", camera.projection_view_matrix);
+        let mut write_lock = self.vp_camera_buffers[0].write()?;
+        *write_lock = camera.projection_view_matrix.into();
+        write_lock = self.vp_camera_buffers[1].write()?;
+        *write_lock = camera.projection_view_matrix.into();
+        write_lock = self.vp_camera_buffers[2].write()?;
         *write_lock = camera.projection_view_matrix.into();
         println!("Successfully copied camera vp_matrix: {:?} to vp buffer with index: {}", camera.projection_view_matrix, next_swapchain_image_index);
         Ok(())
@@ -151,7 +155,7 @@ impl BufferManager {
     }
 
     pub fn get_transform_buffer_descriptor_set(& self, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let layout = self.pipeline.layout().set_layouts().get(1).unwrap();
+        let layout = self.pipeline.layout().set_layouts().get(0).unwrap();
         PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
             layout.clone(),
@@ -170,11 +174,11 @@ impl BufferManager {
         .unwrap();
 
         let mut descriptor_sets = Vec::new();
-        descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
+        //descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
         descriptor_sets.push(self.get_transform_buffer_descriptor_set(acquired_swapchain_image).clone());
         
-        let vertex_buffer = self.vertex_buffers[acquired_swapchain_image].clone();
-
+        let vertex_buffer = self.vertex_buffer.vertex_buffer.clone();
+       // println!("Vertex buffer with index {acquired_swapchain_image} has the following data {a}");
         let builder = command_buffer_builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -196,47 +200,35 @@ impl BufferManager {
             )
             .unwrap();
 
-           //let newly_added_tranform_indexes = self.transform_buffers.get_newly_added_transform_indexes();
+        //let newly_added_tranform_indexes = self.transform_buffers.get_newly_added_transform_indexes();
+//
+        //let builder = match newly_added_tranform_indexes {
+        //    Some(newly_added_tranform_indexes) => self.build_synch_transform_buffers_commands(builder, acquired_swapchain_image, &newly_added_tranform_indexes),
+        //    None => builder, 
+        //};
 
-           //let builder = match newly_added_tranform_indexes {
-           //    Some(newly_added_tranform_indexes) => self.build_synch_transform_buffers_commands(builder, acquired_swapchain_image, &newly_added_tranform_indexes),
-           //    None => builder, 
-           //};
-
-           //let builder = match self.vertex_buffers.newly_added_mesh_first_and_last_vertex_index {
-           //    Some((first_vertex_index, last_vertex_index)) => { 
-           //        let builder = self.build_synch_vertex_buffers_commands(builder, acquired_swapchain_image, first_vertex_index, last_vertex_index);
-           //        self.vertex_buffers.newly_added_mesh_first_and_last_vertex_index = None;
-           //        builder
-           //    }
-           //    None => {builder}
-           //};
-
-            let mesh_accessor = & self.vertex_buffers.mesh_accessor;
-            print!("-----------------------mesh accessor.meshes length is: {} ----------------", mesh_accessor.meshes.len());
-            if mesh_accessor.meshes.len() > 0 {
-                let builder = self.vertex_buffers.mesh_accessor.meshes.iter().fold(builder, |builder, mesh| {
-                    let instances_count = mesh_accessor.mesh_name_instance_count_map.get(&mesh.name).unwrap();
-                    let meshes_first_vertex_index = mesh_accessor.mesh_name_first_vertex_index_map.get(&mesh.name).unwrap();
-                    builder
-                        .draw(mesh.data.len() as u32, *instances_count as u32, *meshes_first_vertex_index as u32, 0)
-                        .unwrap()
-                });
-                builder
-                .end_render_pass(SubpassEndInfo::default())
+        //println!("Building command buffer for frame number {}", acquired_swapchain_image);
+//
+        for mesh in self.vertex_buffer.mesh_accessor.meshes.iter() {
+            let instances_count = self.vertex_buffer.mesh_accessor.mesh_name_instance_count_map.get(&mesh.name).unwrap();
+            let vertex_count = mesh.data.len() as u32;
+            let meshes_first_vertex_index = self.vertex_buffer.mesh_accessor.mesh_name_first_vertex_index_map.get(&mesh.name).unwrap();
+            //println!("adding draw call for mesh \n instance count: {} \n vertex count: {}", instances_count, vertex_count);
+            builder
+                .draw(vertex_count, *instances_count as u32, *meshes_first_vertex_index as u32, 0)
                 .unwrap();
-            }
-            else {
-                builder
-                .end_render_pass(SubpassEndInfo::default())
-                .unwrap();
-            }
+            //println!("added draw call to command buffer successfully");
+        }
+        builder
+        .end_render_pass(SubpassEndInfo::default())
+        .unwrap();
+        
 
         let command_buffer = command_buffer_builder.build().unwrap();
         command_buffer
     }
 
-    fn build_synch_transform_buffers_commands<'a>(&'a mut self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, unsynched_ahead_buffer_index: usize, newly_added_transform_indexes: &Vec<usize>) -> & mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+    fn build_synch_transform_buffers_commands<'a>(&'a self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, unsynched_ahead_buffer_index: usize, newly_added_transform_indexes: &Vec<usize>) -> & mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
         let (most_up_to_date_buffer, buffers_to_update) = self.transform_buffers.get_synch_info(unsynched_ahead_buffer_index);
         for buffer_to_update in buffers_to_update.iter() {
             let mut copy_info = CopyBufferInfo::buffers(most_up_to_date_buffer.clone(), buffer_to_update.clone());
@@ -255,25 +247,21 @@ impl BufferManager {
         builder
     }
     
-    fn build_synch_vertex_buffers_commands<'a>(&'a mut self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, unsynched_ahead_buffer_index: usize, first_vertex_index: usize, last_vertex_index: usize) -> &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
-        let (most_up_to_date_buffer, buffers_to_update) = self.vertex_buffers.get_synch_info(unsynched_ahead_buffer_index);
-        for buffer_to_update in buffers_to_update.iter() {
-            let mut copy_info = CopyBufferInfo::buffers(most_up_to_date_buffer.clone(), buffer_to_update.clone());
-            let buffer_copy_info = BufferCopy {
-                src_offset: first_vertex_index as u64,
-                dst_offset: first_vertex_index as u64,
-                size: (last_vertex_index - first_vertex_index) as u64,
-                ..Default::default()
-            };
-            let mut small_vec = Vec::new();
-            small_vec.push(buffer_copy_info);
-            copy_info.regions = small_vec.into();
-            builder.copy_buffer(copy_info).unwrap();
-        }
-        builder
-    }
-
-    pub fn get_command_buffer(&mut self, acquired_swapchain_image: usize) -> Arc<PrimaryAutoCommandBuffer> {
-        self.build_command_buffer(acquired_swapchain_image)
-    }
+    //fn build_synch_vertex_buffers_commands<'a>(&'a mut self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, unsynched_ahead_buffer_index: usize, first_vertex_index: usize, last_vertex_index: usize) -> &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+    //    let (most_up_to_date_buffer, buffers_to_update) = self.vertex_buffers.get_synch_info(unsynched_ahead_buffer_index);
+    //    for buffer_to_update in buffers_to_update.iter() {
+    //        let mut copy_info = CopyBufferInfo::buffers(most_up_to_date_buffer.clone(), buffer_to_update.clone());
+    //        let buffer_copy_info = BufferCopy {
+    //            src_offset: first_vertex_index as u64,
+    //            dst_offset: first_vertex_index as u64,
+    //            size: (last_vertex_index - first_vertex_index) as u64,
+    //            ..Default::default()
+    //        };
+    //        let mut small_vec = Vec::new();
+    //        small_vec.push(buffer_copy_info);
+    //        copy_info.regions = small_vec.into();
+    //        builder.copy_buffer(copy_info).unwrap();
+    //    }
+    //    builder
+    //}
 }

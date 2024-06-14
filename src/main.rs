@@ -1,5 +1,7 @@
+use cgmath::Vector3;
 use egui_winit_vulkano::egui::{CentralPanel, Context, RawInput};
 use engine::{engine::Engine, scene::Scene};
+use physics::physics_traits::Transform;
 use rendering::{renderer::Renderer};
 use vulkano::{swapchain, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, VulkanError};
 use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
@@ -9,7 +11,7 @@ pub mod rendering;
 pub mod physics;
 pub mod engine;
 
-use std::{cell::RefCell, env, sync::Arc};
+use std::{env, sync::Arc};
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
@@ -23,12 +25,17 @@ fn main() {
     //    .build(&event_loop)
     //    .unwrap();
     let mut engine = Engine::new();
-    let mut renderer = Renderer::new(&event_loop);
+    let renderer = Renderer::new(&event_loop);
 
     let scene_1 = Arc::new(Scene::new());
     
     engine.set_active_scene(scene_1.clone());
-    engine.add_cube_to_scene(None);
+    let translation1 = Some(Vector3{x: 1., y: 1., z: -5.});
+    engine.add_cube_to_scene(translation1);
+    let translation2 = Some(Vector3{x: -2., y: -1., z: 5.});
+    engine.add_cube_to_scene(translation2);
+    let translation3 = Some(Vector3{x: -4., y: 4., z: 2.});
+    engine.add_cube_to_scene(translation3);
 
     start_engine(event_loop, engine, renderer);
 }
@@ -70,70 +77,71 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
 
                 egui_ctx.begin_frame(RawInput::default());
 
-                            // Draw your UI here
-                            CentralPanel::default().show(&egui_ctx, |ui| {
-                                ui.label("Hello, egui!");
-                            });
+                //// Draw your UI here
+                //CentralPanel::default().show(&egui_ctx, |ui| {
+                //    ui.label("Hello, egui!");
+                //});
+//
+                //let output = egui_ctx.end_frame();
+                //let paint_jobs = egui_ctx.tessellate(output.shapes);
+//
+                //// You should provide your own rendering code here
+                //// For simplicity, let's just print out the paint jobs
+                //for primitive in paint_jobs {
+                //    println!("Render mesh: {:?}", primitive);
+                //}
 
-                            let output = egui_ctx.end_frame();
-                            let paint_jobs = egui_ctx.tessellate(output.shapes);
+                let (swapchain_image_index, suboptimal, acquire_future) =
+                    match swapchain::acquire_next_image(
+                        renderer.swapchain.clone(),
+                        None,
+                    ).map_err(Validated::unwrap) {
+                        Ok(r) => r,
+                        Err(VulkanError::OutOfDate) => {
+                            recreate_swapchain = true;
+                            return;
+                        }
+                        Err(e) => panic!("Failed to acquire next image: {:?}", e),
+                    };
 
-                            // You should provide your own rendering code here
-                            // For simplicity, let's just print out the paint jobs
-                            for primitive in paint_jobs {
-                                println!("Render mesh: {:?}", primitive);
-                            }
+                if suboptimal {
+                    recreate_swapchain = true;
+                }
 
-                            let (swapchain_image_index, suboptimal, acquire_future) =
-                                match swapchain::acquire_next_image(
-                                    renderer.swapchain.clone(),
-                                    None,
-                                ).map_err(Validated::unwrap) {
-                                    Ok(r) => r,
-                                    Err(VulkanError::OutOfDate) => {
-                                        recreate_swapchain = true;
-                                        return;
-                                    }
-                                    Err(e) => panic!("Failed to acquire next image: {:?}", e),
-                                };
+                // wait for the fence related to this image to finish (normally this would be the oldest fence)
+                if let Some(image_fence) = &fences[swapchain_image_index as usize] {
+                    image_fence.wait(None).unwrap();
+                    engine.next_swapchain_image_index = swapchain_image_index as usize;
+                    engine.work_off_event_queue(&mut renderer);
+                }
 
-                            if suboptimal {
-                                recreate_swapchain = true;
-                            }
+                let previous_future = match fences[previous_fence_i].clone() {
+                    None => {
+                        let mut now = sync::now(renderer.device.clone());
+                        now.cleanup_finished();
+                        now.boxed()
+                    }
+                    Some(fence) => fence.boxed(),
+                };
+                
+                let future = renderer.get_future(
+                    previous_future,
+                    acquire_future,
+                    swapchain_image_index as usize
+                );
 
-                            // wait for the fence related to this image to finish (normally this would be the oldest fence)
-                            if let Some(image_fence) = &fences[swapchain_image_index as usize] {
-                                image_fence.wait(None).unwrap();
-                                engine.next_swapchain_image_index = swapchain_image_index as usize;
-                                engine.work_off_event_queue(&mut renderer);
-                            }
-
-                            let previous_future = match fences[previous_fence_i].clone() {
-                                None => {
-                                    let mut now = sync::now(renderer.device.clone());
-                                    now.cleanup_finished();
-                                    now.boxed()
-                                }
-                                Some(fence) => fence.boxed(),
-                            };
-                            let future = renderer.get_future(
-                                previous_future,
-                                acquire_future,
-                                swapchain_image_index as usize
-                            );
-
-                            fences[swapchain_image_index as usize] = match future {
-                                Ok(value) => Some(Arc::new(value)),
-                                Err(Validated) => {
-                                    recreate_swapchain = true;
-                                    None
-                                }
-                                Err(e) => {
-                                    println!("Failed to flush future: {:?}", e);
-                                    None
-                                }
-                            };
-                            previous_fence_i = swapchain_image_index as usize;
+                fences[swapchain_image_index as usize] = match future {
+                    Ok(value) => Some(Arc::new(value)),
+                    Err(Validated) => {
+                        recreate_swapchain = true;
+                        None
+                    }
+                    Err(e) => {
+                        println!("Failed to flush future: {:?}", e);
+                        None
+                    }
+                };
+                previous_fence_i = swapchain_image_index as usize;
             },
             _ => (),
         //    Event::WindowEvent { event, .. } => {

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, error::Error, sync::Arc};
+use std::{sync::Arc};
 
 use vulkano::{command_buffer::CommandBufferExecFuture, device::{physical::{PhysicalDevice, PhysicalDeviceType}, Device, DeviceCreateInfo, 
 DeviceExtensions, Queue, QueueCreateInfo, QueueFlags}, image::{Image, ImageUsage}, instance::Instance, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, 
@@ -7,7 +7,7 @@ use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
 use crate::{engine::scene::Scene, initialize::vulkan_instancing::get_vulkan_instance, physics::physics_traits::Transform};
 
-use super::{buffer_manager::BufferManager, primitives::{self, Mesh}, rendering_traits::{RenderableEntity, Visibility}, shaders::Shaders};
+use super::{buffer_manager::BufferManager, primitives::{self, Mesh}, rendering_traits::{Visibility}, shaders::Shaders};
 
 pub enum EntityUpdateInfo {
     HasMoved(HasMovedInfo),
@@ -24,8 +24,6 @@ pub enum EngineEvent {
     EntitiesUpdated(Vec<EntityUpdateInfo>),
     ChangedActiveScene(Arc<Scene>),
 }
-
-
 
 pub struct Renderer {
     vulkan_instance: Arc<Instance>,
@@ -272,6 +270,7 @@ impl Renderer {
     }
 
     pub fn entities_updated_handler(&mut self, updated_entities_infos: Vec<EntityUpdateInfo>) -> ()  {
+        println!("Got into entitited updated handler");
         for (i, entity_update_info) in updated_entities_infos.iter().enumerate() {
             match entity_update_info {
                 EntityUpdateInfo::HasMoved(has_moved_info) => {
@@ -292,7 +291,7 @@ impl Renderer {
 
     //todo: make it so that when multiple entities get added in one frame, they will get collected and not as many events get fired
     pub fn entity_added_handler(&mut self, entity_transform: Transform, entity_mesh: Mesh, entity_index: usize) -> ()  {
-        //println!("Entity added in frame index: {}", acquired_swapchain_index);
+        println!("Entity added");
         match self.buffer_manager.register_entity(entity_transform, entity_mesh, self.currenty_not_displayed_swapchain_image_index, entity_index) {
             Ok(()) => {
                 println!("Successfully handled EntityAdded event");

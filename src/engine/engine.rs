@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use cgmath::Vector3;
@@ -32,11 +31,8 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        
         let entities = Vec::new();
-
         let event_queue = Vec::new();
-        
         Self {
             entities,
             next_swapchain_image_index: 0,
@@ -62,8 +58,8 @@ impl Engine {
                     };
                     entities_tick_infos.push(EntityUpdateInfo::HasMoved(transform_buffer_info));
                 },
-                Some(TickAction::ChangedVisibility(Visibility)) => {
-                    entities_tick_infos.push(EntityUpdateInfo::ChangedVisibility(Visibility));
+                Some(TickAction::ChangedVisibility(visbility)) => {
+                    entities_tick_infos.push(EntityUpdateInfo::ChangedVisibility(visbility));
                 }
                 None => {},
             }
@@ -84,7 +80,7 @@ impl Engine {
                 self.entities.push(cube);
             }
             None => {
-                let mut cube = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
+                let mut cube: Box<Cube> = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
                 let mesh = cube.get_mesh("Cube".to_owned());
                 let entity_index: usize = self.entities.len();
                 self.event_queue.push(EngineEvent::EntityAdded(cube.get_transform(), mesh, entity_index));

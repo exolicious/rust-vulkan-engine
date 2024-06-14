@@ -40,12 +40,14 @@ impl MeshAccessor {
     }
 
     fn add_new_mesh(&mut self, entity_mesh: Mesh) {
-        self.mesh_name_instance_count_map.insert(entity_mesh.get_name().to_string(), 0usize);
+        let mesh_name = entity_mesh.get_name().to_string();
+        self.mesh_name_instance_count_map.insert(mesh_name.clone(), 1usize);
+        self.mesh_name_first_vertex_index_map.insert(mesh_name, self.get_last_vertex_index());
         self.meshes.push(entity_mesh);
     }
 
     pub fn get_last_vertex_index(&self) -> usize {
-        self.meshes.iter().fold(0, |acc, mesh| {
+        self.meshes.iter().fold(0, |_, mesh| {
             mesh.data.iter().count()
         })
     }
