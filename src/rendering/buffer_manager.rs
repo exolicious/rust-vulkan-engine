@@ -1,5 +1,5 @@
 use std::{collections::{HashMap}, sync::Arc};
-use cgmath::{Matrix4, SquareMatrix};
+use glam::Mat4;
 use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassEndInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, image::Image, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, RenderPass}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
 use super::{frame::Frame, primitives::Mesh, rendering_traits::RenderableEntity, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffer};
@@ -75,7 +75,7 @@ impl BufferManager {
 
     fn initialize_vp_camera_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[f32; 4]; 4]>> {
         let mut vp_matrix_buffers = Vec::new();
-        let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
+        let projection_view_matrix: Mat4 = Mat4::IDENTITY;
         for _ in 0..swapchain_images_length {
             let uniform_buffer = Buffer::from_data(
                 memory_allocator.clone(),
@@ -87,7 +87,7 @@ impl BufferManager {
                     memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
-                projection_view_matrix.into(),
+                projection_view_matrix.to_cols_array_2d(),
             )
             .unwrap();
             vp_matrix_buffers.push(uniform_buffer);
@@ -122,8 +122,10 @@ impl BufferManager {
     }
 
     pub fn update_entity_transform_buffer(& self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        println!("entity id: {entity_id}");
         match self.entities_transform_ids.iter().position(|existing_entity_id| existing_entity_id == entity_id) {
             Some(entity_transform_index) => {
+                println!("entity transform index: {entity_transform_index}");
                 self.transform_buffers.update_entity_transform(entity_transform_index, entity_transform, next_swapchain_image_index)?;
                 Ok(())
             }
@@ -134,11 +136,11 @@ impl BufferManager {
     pub fn copy_vp_camera_data(& self, camera: &Camera, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
         println!("{:?}", camera.projection_view_matrix);
         let mut write_lock = self.vp_camera_buffers[0].write()?;
-        *write_lock = camera.projection_view_matrix.into();
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
         write_lock = self.vp_camera_buffers[1].write()?;
-        *write_lock = camera.projection_view_matrix.into();
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();;
         write_lock = self.vp_camera_buffers[2].write()?;
-        *write_lock = camera.projection_view_matrix.into();
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();;
         println!("Successfully copied camera vp_matrix: {:?} to vp buffer with index: {}", camera.projection_view_matrix, next_swapchain_image_index);
         Ok(())
     }
@@ -155,7 +157,7 @@ impl BufferManager {
     }
 
     pub fn get_transform_buffer_descriptor_set(& self, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let layout = self.pipeline.layout().set_layouts().get(0).unwrap();
+        let layout = self.pipeline.layout().set_layouts().get(1).unwrap();
         PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
             layout.clone(),
@@ -174,7 +176,7 @@ impl BufferManager {
         .unwrap();
 
         let mut descriptor_sets = Vec::new();
-        //descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
+        descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
         descriptor_sets.push(self.get_transform_buffer_descriptor_set(acquired_swapchain_image).clone());
         
         let vertex_buffer = self.vertex_buffer.vertex_buffer.clone();

@@ -1,4 +1,4 @@
-use cgmath::{Vector3, perspective, Deg};
+use glam::{Mat4, Vec3};
 
 use crate::physics::physics_traits::Transform;
 
@@ -11,8 +11,9 @@ pub struct Scene {
 
 impl Scene {
     pub fn new() -> Self {
-        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: -2. }, ..Default::default() };
-        let projection_matrix = perspective(Deg{ 0: 55.}, 16./9. , 1., 4000.);
+        let transform = Transform { translation: Vec3 { x: 0., y: 0., z: -5. }, ..Default::default() };
+        println!("initial camera transform: {:?}", transform);
+        let projection_matrix = Mat4::perspective_lh(55., 16./9., 1., 4000.);
         
         let camera = Camera::new(transform, projection_matrix);
 

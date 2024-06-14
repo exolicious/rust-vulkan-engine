@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cgmath::Vector3;
+use glam::Vec3;
 use egui_winit_vulkano::egui::Window;
 use egui_winit_vulkano::Gui;
 use rand::Rng;
@@ -67,20 +67,20 @@ impl Engine {
         self.event_queue.push(EngineEvent::EntitiesUpdated(entities_tick_infos)); 
     }
 
-    pub fn add_cube_to_scene(&mut self, translation: Option<Vector3<f32>>) -> () {
+    pub fn add_cube_to_scene(&mut self, translation: Option<Vec3>) -> () {
         match translation {
             Some(translation) => {
                 let rand_x: f32 = rand::thread_rng().gen_range(-0.5_f32..0.5_f32);
                 let rand_y: f32 = rand::thread_rng().gen_range(-0.5_f32..1_f32);
                 let rand_z: f32 = rand::thread_rng().gen_range(-2_f32..-0.7_f32);
-                let mut cube = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation, ..Default::default()}));
+                let mut cube = Box::new(Cube::new(Vec3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation, ..Default::default()}));
                 let mesh = cube.get_mesh("Cube".to_owned());
                 let entity_index = self.entities.len();
                 self.event_queue.push(EngineEvent::EntityAdded(cube.get_transform(), mesh, entity_index));
                 self.entities.push(cube);
             }
             None => {
-                let mut cube: Box<Cube> = Box::new(Cube::new(Vector3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vector3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
+                let mut cube: Box<Cube> = Box::new(Cube::new(Vec3{ x: 0.25, y: 0.25, z: 0.25 }, Transform { translation: Vec3 { x: 0., y: 0., z: 0. }, ..Default::default() }));
                 let mesh = cube.get_mesh("Cube".to_owned());
                 let entity_index: usize = self.entities.len();
                 self.event_queue.push(EngineEvent::EntityAdded(cube.get_transform(), mesh, entity_index));
@@ -89,7 +89,7 @@ impl Engine {
         };
     }
 
-    pub fn add_cubes_to_scene(&mut self, translations: Vec<Option<Vector3<f32>>>) -> () {
+    pub fn add_cubes_to_scene(&mut self, translations: Vec<Option<Vec3>>) -> () {
 
     }
 

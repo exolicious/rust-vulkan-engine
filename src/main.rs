@@ -1,6 +1,6 @@
-use cgmath::Vector3;
 use egui_winit_vulkano::egui::{CentralPanel, Context, RawInput};
 use engine::{engine::Engine, scene::Scene};
+use glam::Vec3;
 use physics::physics_traits::Transform;
 use rendering::{renderer::Renderer};
 use vulkano::{swapchain, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, VulkanError};
@@ -30,11 +30,11 @@ fn main() {
     let scene_1 = Arc::new(Scene::new());
     
     engine.set_active_scene(scene_1.clone());
-    let translation1 = Some(Vector3{x: 1., y: 1., z: -5.});
+    let translation1 = Some(Vec3{x: 1., y: 1., z: -5.});
     engine.add_cube_to_scene(translation1);
-    let translation2 = Some(Vector3{x: -2., y: -1., z: 5.});
+    let translation2 = Some(Vec3{x: -2., y: -1., z: 5.});
     engine.add_cube_to_scene(translation2);
-    let translation3 = Some(Vector3{x: -4., y: 4., z: 2.});
+    let translation3 = Some(Vec3{x: -4., y: 4., z: 2.});
     engine.add_cube_to_scene(translation3);
 
     start_engine(event_loop, engine, renderer);

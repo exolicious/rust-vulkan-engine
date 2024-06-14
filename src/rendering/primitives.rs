@@ -1,7 +1,7 @@
 use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, DerefMut}};
 
 use bytemuck::{Zeroable, Pod};
-use cgmath::Vector3;
+use glam::Vec3;
 use rand::Rng;
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VertexMacro};
 
@@ -103,14 +103,14 @@ impl Triangle {
 
 #[derive(Debug, Clone)]
 pub struct Cube {
-    pub bounds: Vector3<f32>, 
+    pub bounds: Vec3,
     transform: Transform,
     mesh: Option<Mesh>,
     id: String,
 }
 
 impl Cube {
-    pub fn new(bounds: Vector3<f32>, transform: Transform) -> Self {
+    pub fn new(bounds: Vec3, transform: Transform) -> Self {
         Self {
             bounds,
             transform,
@@ -138,7 +138,7 @@ impl Entity for Cube {
 
 impl Default for Cube {
     fn default() -> Self {
-        let bounds = Vector3 { x: 0.25, y: 0.125, z: 0.25 };
+        let bounds = Vec3 { x: 0.25, y: 0.125, z: 0.25 };
         
         Self {
             bounds : bounds,
@@ -155,7 +155,7 @@ impl Movable for Cube {
         self.move_x(amount);
     }
 
-    fn move_xyz(&mut self, amount: Vector3<f32>) -> () {
+    fn move_xyz(&mut self, amount: Vec3) -> () {
         self.move_x(amount.x);
         self.move_y(amount.y);
         self.move_z(amount.z);

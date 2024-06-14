@@ -10,22 +10,16 @@ mod vertex_shader {
 
             layout(location = 0) in vec3 position;
 
-            //layout(set = 0, binding = 0) uniform UniformBufferObject {
-            //    mat4 u_projection_view_matrix;
-            //} ubo;
+            layout(set = 0, binding = 0) uniform UniformBufferObject {
+                mat4 u_projection_view_matrix;
+            } ubo;
 
-            layout(set = 0, binding = 0) uniform TransformBufferObject {
+            layout(set = 1, binding = 0) uniform TransformBufferObject {
                 mat4 u_transform_matrix[1000000000];
             } tbo;
             
             void main() {
-                mat4 vpMatrix = mat4(
-                    1.0805525, 0.0, 0.0, 0.0,
-                    0.0, 1.9209821, 0.0, 0.0,
-                    0.0, 0.0, -1.0005001, -1.0,
-                    0.0, 0.0, -4.001, -2.0
-                );
-                gl_Position = vpMatrix * tbo.u_transform_matrix[gl_InstanceIndex] * vec4(position, 1.0);
+                gl_Position = ubo.u_projection_view_matrix * tbo.u_transform_matrix[gl_InstanceIndex] * vec4(position, 1.0);
             }",
     }
 }

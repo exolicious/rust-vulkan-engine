@@ -43,8 +43,8 @@ impl TransformBuffers {
     }
 
     pub fn bind_entity_transform(&mut self, entity_transform: Transform, entity_id: usize, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        self.entity_to_transform_buffer_index.push(entity_id);
         let entity_transform_index = self.entity_to_transform_buffer_index.len();
+        self.entity_to_transform_buffer_index.push(entity_id);
         match & mut self.newly_added_transform_indexes {
             Some(vec) => vec.push(entity_transform_index),
             None => { self.newly_added_transform_indexes = Some(Vec::new()) }
@@ -61,12 +61,6 @@ impl TransformBuffers {
     }
 
     fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let model_matrix =  entity_transform.model_matrix();
-        println!("Entity Translation x: {}", entity_transform.translation.x);
-        println!("Entity Translation y: {}", entity_transform.translation.y);
-        println!("Entity Translation z: {}", entity_transform.translation.z);
-        println!("model matrix: {:?}", model_matrix);
-        println!("Copied above entity transforms to uniform buffer with index: {}", next_swapchain_image_index);
         let mut write_lock =  self.transform_buffers[0].write()?;
         write_lock[entity_transform_index] = entity_transform.model_matrix();
         let mut write_lock =  self.transform_buffers[1].write()?;
