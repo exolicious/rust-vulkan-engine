@@ -4,7 +4,7 @@ use glam::Vec3;
 use physics::physics_traits::Transform;
 use rendering::{renderer::Renderer};
 use vulkano::{swapchain, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, VulkanError};
-use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
+use winit::{event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
 pub mod initialize;
 pub mod rendering;
@@ -30,12 +30,32 @@ fn main() {
     let scene_1 = Arc::new(Scene::new());
     
     engine.set_active_scene(scene_1.clone());
-    let translation1 = Some(Vec3{x: 1., y: 1., z: -5.});
+    let translation1 = Some(Vec3{x: 1., y: 1., z: 2.});
     engine.add_cube_to_scene(translation1);
-    let translation2 = Some(Vec3{x: -2., y: -1., z: 5.});
-    engine.add_cube_to_scene(translation2);
-    let translation3 = Some(Vec3{x: -4., y: 4., z: 2.});
-    engine.add_cube_to_scene(translation3);
+    //let translation2 = Some(Vec3{x: -2., y: -1., z: 5.});
+    //engine.add_cube_to_scene(translation2);
+    //let translation3 = Some(Vec3{x: -4., y: 4., z: 2.});
+    //engine.add_cube_to_scene(translation3);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+    //engine.add_cube_to_scene(None);
+
 
     start_engine(event_loop, engine, renderer);
 }
@@ -91,6 +111,8 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                 //    println!("Render mesh: {:?}", primitive);
                 //}
 
+                println!("Trying to acquire swapchain image!");
+
                 let (swapchain_image_index, suboptimal, acquire_future) =
                     match swapchain::acquire_next_image(
                         renderer.swapchain.clone(),
@@ -108,11 +130,12 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                     recreate_swapchain = true;
                 }
 
+                println!("swapchain_image_index: {}", swapchain_image_index);
+
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
                 if let Some(image_fence) = &fences[swapchain_image_index as usize] {
                     image_fence.wait(None).unwrap();
-                    engine.next_swapchain_image_index = swapchain_image_index as usize;
-                    engine.work_off_event_queue(&mut renderer);
+                    engine.work_off_event_queue(&mut renderer, swapchain_image_index as usize);
                 }
 
                 let previous_future = match fences[previous_fence_i].clone() {
@@ -141,56 +164,38 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                         None
                     }
                 };
+                println!("Setting previous fence index");
                 previous_fence_i = swapchain_image_index as usize;
             },
-            _ => (),
-        //    Event::WindowEvent { event, .. } => {
-        //        //let pass_events_to_game = !gui.update(&event); // if this returns false, then egui wont have to handle the request and we can pass it to the game
-        //        //if pass_events_to_game {
-        //            match event {
-        //                WindowEvent::Resized(_) => {
-        //                    self.window_resized_event_handler();
-        //                }
-        //                WindowEvent::CloseRequested => control_flow.set_exit(),
-        //                WindowEvent::KeyboardInput {
-        //                    device_id,
-        //                    input,
-        //                    is_synthetic,
-        //                       
-        //                } => match input {
-        //                    KeyboardInput { scancode: _, state: ElementState::Pressed, virtual_keycode: Some(key), .. } => {
-        //                        match key {
-        //                            VirtualKeyCode::Space => {
-        //                                for _ in 0..100 {
-        //                                    let rand_x: f32 =
-        //                                        rand::thread_rng().gen_range(-2_f32..2_f32);
-        //                                    let rand_y: f32 =
-        //                                        rand::thread_rng().gen_range(-2_f32..2_f32);
-        //                                    let rand_z: f32 =
-        //                                        rand::thread_rng().gen_range(-7_f32..-2_f32);
-        //                                    self.engine.add_cube_to_scene(Some(Vector3 {
-        //                                        x: rand_x,
-        //                                        y: rand_y,
-        //                                        z: rand_z,
-        //                                    }));
-        //                                }
-        //                            },
-        //                            _ => {}
-        //                        }
-        //                    },
-        //                    _ => {},
-        //                },
-        //                _ => (),
-        //            }
-        //        //}
-        //    }
-        //    Event::NewEvents(_) => todo!(),
-        //    Event::DeviceEvent { device_id, event } => todo!(),
-        //    Event::UserEvent(_) => todo!(),
-        //    Event::Suspended => todo!(),
-        //    Event::Resumed => todo!(),
-        //    Event::RedrawEventsCleared => todo!(),
-        //    Event::LoopDestroyed => todo!(),
+            Event::WindowEvent { event, .. } => {
+                //let pass_events_to_game = !gui.update(&event); // if this returns false, then egui wont have to handle the request and we can pass it to the game
+                //if pass_events_to_game {
+                    match event {
+                        WindowEvent::CloseRequested => control_flow.set_exit(),
+                        WindowEvent::KeyboardInput {
+                            device_id,
+                            input,
+                            is_synthetic,
+                               
+                        } => match input {
+                            KeyboardInput { scancode: _, state: ElementState::Pressed, virtual_keycode: Some(key), .. } => {
+                                match key {
+                                    VirtualKeyCode::Space => {
+                                        println!("Called the match Key Event");
+                                        for _ in 0..2 {
+                                            engine.add_cube_to_scene(None);
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            },
+                            _ => {},
+                        },
+                        _ => (),
+                    }
+                //}
+            }
+            _ => ()
         }
     });
 }

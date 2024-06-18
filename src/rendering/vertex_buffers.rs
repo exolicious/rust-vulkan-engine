@@ -52,11 +52,6 @@ impl VertexBuffer {
     }
 
     fn copy_blueprint_mesh_data_to_vertex_buffer(& self, first_index: usize, mesh_data: &Vec<Vertex>) -> Result<(), Box<dyn Error>> {
-        for (i, vertex) in mesh_data.iter().enumerate() {
-            for pos in vertex.position {
-                //println!("Vertex number {i}: {pos}");
-            }
-        }
         println!("Copying new mesh data to vertex buffer");
         println!("first vertex buffer index for mesh: {}", first_index);
         println!("last vertex buffer index for mesh: {}", mesh_data.iter().len());
