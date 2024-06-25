@@ -1,265 +1,286 @@
-use std::{collections::{HashMap, hash_map::DefaultHasher}, sync::Arc, hash::{Hasher, Hash}, cell::RefCell};
-use cgmath::{Matrix4, SquareMatrix};
-use vulkano::{buffer::{CpuAccessibleBuffer, BufferUsage}, device::Device, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, GraphicsPipeline}};
-use crate::{camera::camera::Camera, physics::physics_traits::Transform, rendering::renderer::RendererEvent};
-use super::{rendering_traits::{RenderableEntity}, primitives::{Vertex, Mesh}};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, mem::size_of, sync::Arc};
+use egui_winit_vulkano::egui::{epaint::{self, Primitive}, ClippedPrimitive};
+use glam::Mat4;
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents, SubpassEndInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, image::{view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, RenderPass, RenderPassCreateInfo, Subpass}};
+use crate::{engine::camera::Camera, physics::physics_traits::Transform};
+use super::{frame::Frame, primitives::Mesh, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffer};
+use std::error::Error;
+use core::fmt::Error as ErrorVal;
+use vulkano::format::Format;
 
-pub struct EntityTransformBufferIndexMap {
-    pub count: usize,
-    pub entity_id_transform_accessor_map: HashMap<String, usize>,
-}
-
-impl EntityTransformBufferIndexMap {
-    pub fn new() -> Self {
-        Self {
-            count: 0,
-            entity_id_transform_accessor_map: HashMap::new()
-        }
-    }
-
-    pub fn add_entity(&mut self, entity_id: String) -> () {
-        self.entity_id_transform_accessor_map.insert(entity_id, self.count);
-        self.count += 1;
-    }
-
-    pub fn get_transform_buffer_index(&self, entity_id: &String) -> usize {
-        self.entity_id_transform_accessor_map[entity_id]
-    }
-}
-
-pub struct MeshAccessor {
-    pub mesh_hash: u64,
-    pub first_index: usize,
-    pub first_instance: usize,
-    pub instance_count: usize,
-    pub vertex_count: usize,
-    pub last_index: usize,
-}
-
-impl MeshAccessor {
-    pub fn add_entity(&mut self) {
-        self.instance_count += 1;
-    }
-}
-
-impl Default for MeshAccessor {
-    fn default() -> Self {
-        Self {
-           mesh_hash: 0,
-           first_index: 0,
-           first_instance: 0,
-           instance_count: 0,
-           vertex_count: 0,
-           last_index: 0
-        }
-    }
-}
-
-const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
-const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(8) as usize; // 32 instances
 
 pub struct BufferManager {
-    /*     renderer_device:  Arc<Device>, */
-    pub mesh_accessors: Vec<MeshAccessor>,
-   /*  entity_transform_buffer_entries: HashMap<u64, Vec<EntityAccessor>>, */
-    pub vertex_buffers: Vec<Arc<CpuAccessibleBuffer<[Vertex]>>>,
-    pub transform_buffers: Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>>,
-    vp_camera_buffers:  Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>>,
-    entity_transform_buffer_index_map: EntityTransformBufferIndexMap,
-    needs_reallocation: bool,
-    ahead_buffers_index: Option<usize>
+    pub descriptor_set_allocator: StandardDescriptorSetAllocator,
+    pub command_buffer_allocator: StandardCommandBufferAllocator,
+    pub memory_allocator: Arc<StandardMemoryAllocator>,
+    pub vertex_buffer: VertexBuffer,
+    pub frames: Vec<Frame>,
+    queue_family_index: u32,
+    pub transform_buffers: RefCell<TransformBuffers>,
+    vp_camera_buffers: Vec<Subbuffer<[[f32; 4]; 4]>>, // needs to be a push constant sooner or later
+    pub entities_transform_ids: Vec<String>,
+    pub entites_to_update: HashMap<String, Transform>,
+    pipeline: Arc<GraphicsPipeline>,
+    gui_image: Arc<Image>,
+    pub gui_image_view: Arc<ImageView>,
 }
 
 impl BufferManager {
-    pub fn new(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Self {
-        let vertex_buffers = Self::initialize_vertex_buffers(renderer_device.clone(), swapchain_images_length);
-        let transform_buffers = Self::initialize_transform_buffers(renderer_device.clone(), swapchain_images_length);
-        let vp_camera_buffers = Self::initialize_vp_camera_buffers(renderer_device.clone(), swapchain_images_length);
-        let mesh_accessors = Vec::new();
-        let entity_transform_buffer_index_map = EntityTransformBufferIndexMap::new();
+    pub fn new(device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_images: Vec<Arc<Image>>, render_pass: Arc<RenderPass>, queue_family_index: u32) -> Self {
+        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
+            device.clone(), 
+            StandardDescriptorSetAllocatorCreateInfo::default()
+        );
+
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(
+            device.clone(),
+            StandardCommandBufferAllocatorCreateInfo {
+                secondary_buffer_count: 32,
+                ..Default::default()
+            }
+        );
+
+        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+
+        let frames = BufferManager::build_frames(device.clone(), pipeline.clone(), swapchain_images.clone(), render_pass.clone(), queue_family_index);
+        let vertex_buffer = VertexBuffer::new(memory_allocator.clone());
+        let transform_buffers = RefCell::new(TransformBuffers::new(memory_allocator.clone(), swapchain_images.len()));
+        let vp_camera_buffers = Self::initialize_vp_camera_buffers(memory_allocator.clone(), swapchain_images.len());
+
+        let entities_transform_ids = Vec::new();
+        let entites_to_update = HashMap::new();
+
+        let gui_image: Arc<Image> = Image::new(
+            memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: Format::R8G8B8A8_UNORM,
+                extent: [150, 150, 1],
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::TRANSFER_SRC | ImageUsage::SAMPLED | ImageUsage::COLOR_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let gui_image_view = ImageView::new_default(gui_image.clone()).unwrap();
+
         Self {
-            /* renderer_device, */
-            mesh_accessors,
-            vertex_buffers,
+            vertex_buffer,
             transform_buffers,
             vp_camera_buffers,
-            entity_transform_buffer_index_map,
-            /* entity_transform_buffer_entries, */
-            needs_reallocation: false,
-            ahead_buffers_index: None
+            entities_transform_ids,
+            descriptor_set_allocator,
+            frames,
+            command_buffer_allocator,
+            memory_allocator,
+            entites_to_update,
+            pipeline,
+            queue_family_index,
+            gui_image,
+            gui_image_view
         }
     }
 
-    fn initialize_vp_camera_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>>> {
+    //has to be called again, when its buffers are out of date (re-allocated due to being too small), or when the swapchain gets updated (window gets resized, or old swapchain was suboptimal )
+    pub fn build_frames(device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_images: Vec<Arc<Image>>, render_pass: Arc<RenderPass>, queue_family_index: u32) -> Vec<Frame> {
+        let mut temp_frames = Vec::new();
+        for (swapchain_image_index, swapchain_image) in swapchain_images.iter().enumerate() {
+            let mut temp_frame = Frame::new(
+                swapchain_image.clone(), 
+                swapchain_image_index
+            );
+            temp_frame.init_framebuffer(render_pass.clone());
+            //temp_frame.init_command_buffer(queue_family_index, buffer_manager, 0);
+            temp_frames.push(temp_frame);
+        }
+        temp_frames
+    }
+
+    fn initialize_vp_camera_buffers(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Vec<Subbuffer<[[f32; 4]; 4]>> {
         let mut vp_matrix_buffers = Vec::new();
-        let projection_view_matrix: Matrix4<f32> = Matrix4::identity();
+        let projection_view_matrix: Mat4 = Mat4::IDENTITY;
         for _ in 0..swapchain_images_length {
-            let uniform_buffer: Arc<CpuAccessibleBuffer<[[f32; 4]; 4]>> = CpuAccessibleBuffer::from_data(
-                renderer_device.clone(),
-                BufferUsage {
-                    uniform_buffer: true,
+            let uniform_buffer = Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::UNIFORM_BUFFER,
                     ..Default::default()
                 },
-                false,
-                projection_view_matrix.into(),
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                projection_view_matrix.to_cols_array_2d(),
             )
             .unwrap();
             vp_matrix_buffers.push(uniform_buffer);
         }
         vp_matrix_buffers
     }
-    
-    fn initialize_vertex_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[Vertex]>>> {
-        let mut vertex_buffers = Vec::new();
-        for _ in 0..swapchain_images_length {
-            let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
-            let vertex_buffer = CpuAccessibleBuffer::from_iter(
-                renderer_device.clone(),
-                BufferUsage {
-                    vertex_buffer: true,
-                    ..Default::default()
+
+    pub fn register_entity(&mut self, entity_transform: Transform, entity_mesh: Mesh, next_swapchain_image_index: usize, entity_index: usize) -> Result<(), Box<dyn Error>> {
+        println!("Trying to register entity in frame {}", next_swapchain_image_index);
+        self.vertex_buffer.bind_entity_mesh(entity_mesh, next_swapchain_image_index)?;
+        self.transform_buffers.borrow_mut().bind_entity_transform(entity_transform, entity_index, next_swapchain_image_index).unwrap();
+        Ok(())
+    }
+
+    pub fn update_buffers(&mut self, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let mut entity_model_matrices = Vec::new();
+        let mut last_index = 0;
+        for (i, (id, transform)) in self.entites_to_update.iter().enumerate() {
+            if i - last_index > 1 { 
+                self.copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, next_swapchain_image_index)?;
+            }
+            entity_model_matrices.push(transform.model_matrix());
+            last_index = i;
+        }
+        Ok(())
+    }
+
+    pub fn copy_transform_data_slice_to_buffer(& self, entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        let binding = self.transform_buffers.borrow();
+        let mut write_lock =  binding[next_swapchain_image_index].write()?;
+        write_lock[entity_transforms_first_index..entity_transforms_last_index].copy_from_slice(entity_model_matrices);
+        //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
+        Ok(())
+    }
+
+    pub fn update_entity_transform_buffer(& self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        println!("entity id: {entity_id}");
+        match self.entities_transform_ids.iter().position(|existing_entity_id| existing_entity_id == entity_id) {
+            Some(entity_transform_index) => {
+                let binding = self.transform_buffers.borrow();
+                println!("entity transform index: {entity_transform_index}");
+                binding.borrow().update_entity_transform(entity_transform_index, entity_transform, next_swapchain_image_index)?;
+                Ok(())
+            }
+            None => Err(Box::new(ErrorVal))
+        }
+    }
+
+    pub fn copy_vp_camera_data(& self, camera: &Camera, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
+        println!("{:?}", camera.projection_view_matrix);
+        let mut write_lock = self.vp_camera_buffers[0].write()?;
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
+        write_lock = self.vp_camera_buffers[1].write()?;
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
+        write_lock = self.vp_camera_buffers[2].write()?;
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
+        println!("Successfully copied camera vp_matrix: {:?} to vp buffer with index: {}", camera.projection_view_matrix, next_swapchain_image_index);
+        Ok(())
+    }
+
+    pub fn get_vp_matrix_buffer_descriptor_set(& self, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+        let layout = self.pipeline.layout().set_layouts().get(0).unwrap();
+        PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            layout.clone(),
+            [WriteDescriptorSet::buffer(0, self.vp_camera_buffers[next_swapchain_image_index].clone())], // 0 is the binding
+            []
+        )
+        .unwrap()
+    }
+
+    pub fn get_transform_buffer_descriptor_set(& self, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+        let layout = self.pipeline.layout().set_layouts().get(1).unwrap();
+        PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            layout.clone(),
+            [WriteDescriptorSet::buffer(0, self.transform_buffers.borrow()[next_swapchain_image_index].clone())],
+            []
+        )
+        .unwrap()
+    }
+
+    pub fn build_command_buffer(& self, acquired_swapchain_image: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Arc<PrimaryAutoCommandBuffer> {
+        //println!("Bulding command buffer for index: {}", acquired_swapchain_image);
+        let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
+            &self.command_buffer_allocator,
+            self.queue_family_index,
+            CommandBufferUsage::OneTimeSubmit,
+        ) 
+        .unwrap();
+
+        let mut descriptor_sets = Vec::new();
+        descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
+        descriptor_sets.push(self.get_transform_buffer_descriptor_set(acquired_swapchain_image).clone());
+        
+        let builder = self.copy_transform_buffer_data(& mut command_buffer_builder, acquired_swapchain_image);
+        
+        let vertex_buffer = self.vertex_buffer.vertex_buffer.clone();
+        // println!("Vertex buffer with index {acquired_swapchain_image} has the following data {a}");
+        let builder = builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                    ..RenderPassBeginInfo::framebuffer(self.frames[acquired_swapchain_image].framebuffer.as_ref().unwrap().clone())
                 },
-                false,
-                initializer_data.into_iter()
+                vulkano::command_buffer::SubpassBeginInfo { ..Default::default() }
+            )
+            .unwrap()
+            .bind_pipeline_graphics(self.pipeline.clone())
+            .unwrap()
+            .bind_vertex_buffers(0, vertex_buffer)
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                self.pipeline.layout().clone(),
+                0,
+                descriptor_sets,
             )
             .unwrap();
-            vertex_buffers.push(vertex_buffer);
+        
+        for mesh in self.vertex_buffer.mesh_accessor.meshes.iter() {
+            let instances_count = self.vertex_buffer.mesh_accessor.mesh_name_instance_count_map.get(&mesh.name).unwrap();
+            let vertex_count = mesh.data.len() as u32;
+            let meshes_first_vertex_index = self.vertex_buffer.mesh_accessor.mesh_name_first_vertex_index_map.get(&mesh.name).unwrap();
+            //println!("adding draw call for mesh \n instance count: {} \n vertex count: {}", instances_count, vertex_count);
+            builder
+                .draw(vertex_count, *instances_count as u32, *meshes_first_vertex_index as u32, 0)
+                .unwrap();
+            //println!("added draw call to command buffer successfully");
         }
-        vertex_buffers
-    }
 
-    fn initialize_transform_buffers(renderer_device: Arc<Device>, swapchain_images_length: usize) -> Vec<Arc<CpuAccessibleBuffer<[[[f32; 4]; 4]]>>> {
-        let mut transform_buffers = Vec::new();
-        for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
-            let uniform_buffer = CpuAccessibleBuffer::from_iter(
-                renderer_device.clone(),
-                BufferUsage {
-                    uniform_buffer: true,
-                    ..Default::default()
-                },
-                false,
-                transform_initial_data.into_iter()
+        builder
+            .next_subpass(Default::default(), SubpassBeginInfo {
+                contents: SubpassContents::SecondaryCommandBuffers,
+                ..Default::default()
+            }
             )
             .unwrap();
-            transform_buffers.push(uniform_buffer);
-        }
-        transform_buffers
+        println!("tryna add execution of gui secondary command buffer in subpass");
+        builder
+        .execute_commands(gui_command_buffer)
+        .unwrap()
+        .end_render_pass(SubpassEndInfo::default())
+        .unwrap();
+        
+        let command_buffer = command_buffer_builder.build().unwrap();
+        
+        command_buffer
     }
 
-    pub fn sync_buffers(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> () {
-        let binding = entity.borrow();
-        let entity_mesh = binding.get_mesh();
-        let entity_id = binding.get_id();
-        let entity_transform = binding.get_transform();
-
-        match self.mesh_accessors.iter().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
-            Some(existing_mesh_accessor) => {
-                self.copy_blueprint_mesh_data_to_vertex_buffer(&existing_mesh_accessor, &entity_mesh.data, next_swapchain_image_index);
-                self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
-            }
-            _ => (),
-        };
-    }
-
-    pub fn register_entity(&mut self, entity: Arc<RefCell<dyn RenderableEntity>>, next_swapchain_image_index: usize) -> () {
-        let binding = entity.borrow();
-        let entity_mesh = binding.get_mesh();
-        let entity_id = binding.get_id();
-        let entity_transform = binding.get_transform();
-
-        match self.mesh_accessors.iter_mut().find(|accessor| accessor.mesh_hash == entity_mesh.hash) {
-            Some(existing_mesh_accessor) => {
-                existing_mesh_accessor.add_entity();
-            }
-            None => {
-                match self.mesh_accessors.iter().last() {
-                    Some(previous_accessor) => {
-                        let mut mesh_acessor = MeshAccessor {
-                            mesh_hash: entity_mesh.hash, 
-                            first_index: previous_accessor.last_index, 
-                            vertex_count: entity_mesh.vertex_count, 
-                            last_index: previous_accessor.last_index + entity_mesh.vertex_count,
-                            first_instance: previous_accessor.first_instance + previous_accessor.instance_count,
-                            ..Default::default()
-                        };
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &entity_mesh.data, next_swapchain_image_index);
-                        mesh_acessor.add_entity();
-                        self.mesh_accessors.push(mesh_acessor);
-                    }
-                    None =>  {
-                        let mut mesh_acessor = MeshAccessor { 
-                            mesh_hash: entity_mesh.hash, 
-                            vertex_count: entity_mesh.vertex_count, 
-                            last_index: entity_mesh.vertex_count,
-                            ..Default::default()
-                        };
-                        self.copy_blueprint_mesh_data_to_vertex_buffer(&mesh_acessor, &entity_mesh.data, next_swapchain_image_index);
-                        mesh_acessor.add_entity();
-                        self.mesh_accessors.push(mesh_acessor);
-                    }
+    //todo: make this work with fragmented buffers...
+    fn copy_transform_buffer_data<'a>(&'a self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, acquired_swapchain_image: usize) -> & mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+        match self.transform_buffers.borrow_mut().get_tansform_buffer_copy_payload(acquired_swapchain_image) {
+            None => return builder,
+            Some(payload) => {
+                println!("DOING TRANSFORM BUFFER SYNC");
+                for target_buffer in payload.target_buffers.iter() {
+                    let mut copy_info = CopyBufferInfo::buffers(payload.src_buffer.clone(), target_buffer.clone());
+                    let first_index_of_newly_added_transforms = *payload.newly_added_transform_indexes.first().unwrap() as u64;
+                    println!("SIZE OF TRANSFORM IN BYTES : {}", size_of::<Mat4>() as u64);
+                    copy_info.regions[0].src_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
+                    copy_info.regions[0].dst_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
+                    copy_info.regions[0].size = (size_of::<Mat4>() * payload.newly_added_transform_indexes.len()) as u64;
+                    builder.copy_buffer(copy_info).unwrap();
                 }
+                builder
             }
         }
-        self.entity_transform_buffer_index_map.add_entity(entity_id.to_string());
-        self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
-        self.ahead_buffers_index = Some(next_swapchain_image_index);
-    }
-    
-
-    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, mesh_acessor: &MeshAccessor, mesh_data: &Vec<Vertex>, next_swapchain_image_index: usize) {
-        println!("first index: {} \n last index: {} ", mesh_acessor.first_index, mesh_acessor.last_index);
-        let main_vertex_buffer = self.vertex_buffers[next_swapchain_image_index].clone();
-        match main_vertex_buffer.write() {
-            Err(_) => println!("Error writing onto mesh buffer"),
-            Ok(mut write_lock) => { 
-                println!("Vertex buffer with index [{}] has been filled with mesh data", next_swapchain_image_index);
-                write_lock[mesh_acessor.first_index..mesh_acessor.last_index].copy_from_slice(&mesh_data.as_slice());
-            }
-        };
-    }
-
-    pub fn update_entity_transform_buffer(&mut self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) {
-        self.copy_transform_data_to_buffer(entity_id, entity_transform, next_swapchain_image_index);
-    }
- 
-    fn copy_transform_data_to_buffer(& self, entity_id: &String, entity_transform: &Transform, next_swapchain_image_index: usize) {
-        let entity_transform_index = self.entity_transform_buffer_index_map.get_transform_buffer_index(&entity_id);
-        //println!("transform index: {}", entity_transform_index);
-        match self.transform_buffers[next_swapchain_image_index].write() {
-            Err(_) => println!("Error writing onto transform buffer"),
-            Ok(mut write_lock) => { 
-                write_lock[entity_transform_index] = entity_transform.model_matrix();
-                //println!("Wrote this transform {:?} to the transform buffer with index [{}] ", entity_transform.model_matrix(), next_swapchain_image_index);
-            }
-        };
-    }
-
-    pub fn copy_vp_camera_data(& self, next_swapchain_image_index: usize, camera: &Camera) {
-        match self.vp_camera_buffers[next_swapchain_image_index].write() {
-            Err(_) => println!("Error writing onto the vp camera buffer"),
-            Ok(mut write_lock) => { 
-                println!("Wrote into vp camera buffer: {:?}", camera.projection_view_matrix);
-                *write_lock = camera.projection_view_matrix.into();
-            }
-        };
-    }
-
-    pub fn get_vp_matrix_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let layout = pipeline.layout().set_layouts().get(0).unwrap();
-        PersistentDescriptorSet::new(
-            layout.clone(),
-            [WriteDescriptorSet::buffer(0, Arc::new(self.vp_camera_buffers[next_swapchain_image_index].clone()))], // 0 is the binding
-        )
-        .unwrap()
-    }
-
-    pub fn get_transform_buffer_descriptor_set(& self, pipeline: Arc<GraphicsPipeline>, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
-        let layout = pipeline.layout().set_layouts().get(1).unwrap();
-        PersistentDescriptorSet::new(
-            layout.clone(),
-            [WriteDescriptorSet::buffer(0, Arc::new(self.transform_buffers[next_swapchain_image_index].clone()))],
-        )
-        .unwrap()
     }
 }

@@ -6,3 +6,6 @@ pub mod rendering_traits;
 pub mod frame;
 pub mod buffer_manager;
 pub mod entities;
+pub mod vertex_buffers;
+pub mod mesh_accessor;
+pub mod transform_buffers;

@@ -1,30 +1,33 @@
 use crate::{physics::physics_traits::{Transform, Movable}, engine::general_traits::Entity};
 
-use cgmath::{Vector3, Matrix4, perspective, SquareMatrix, Deg, InnerSpace};
-
+use glam::{Mat4, Vec3};
 use nanoid::nanoid;
+use vulkano::buffer::view;
+
+use super::general_traits::{TickAction};
 
 #[derive(Debug, Clone)]
 pub struct Camera {
     transform: Transform,
-    projection_matrix: Matrix4<f32>,
-    view_matrix: Matrix4<f32>,
-    pub projection_view_matrix: Matrix4<f32>,
+    projection_matrix: Mat4,
+    view_matrix: Mat4,
+    pub projection_view_matrix: Mat4,
     id: String
 }
 
 impl Camera {
-    pub fn new() -> Self {
-        let transform = Transform { translation: Vector3 { x: 0., y: 0., z: 2. }, ..Default::default() };
-        let projection_matrix = perspective(Deg{ 0: 55.}, 16./9. , 1., 4000.);
-
-        let translation_matrix = Matrix4::from_translation(transform.translation);
-        println!("translation amtrix : {:?}", translation_matrix);
-        let orientation_matrix = Matrix4::from_axis_angle(transform.rotation.v.normalize(), Deg { 0: transform.rotation.s });
+    pub fn new(transform: Transform, projection_matrix: Mat4) -> Self {
+        println!("Camera translation: {:?}", transform.translation);
+        let translation_matrix = Mat4::from_translation(transform.translation);
+        println!("Camera translation amtrix : {:?}", translation_matrix);
+        
+        let orientation_matrix = Mat4::from_quat(transform.rotation);
+        println!("quat angle: {:?}", transform.rotation.to_axis_angle().1);
         println!("orientation amtrix : {:?}", orientation_matrix);
-        let view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
+        let view_matrix = (translation_matrix * orientation_matrix).inverse();
+        println!("view matrix: {:?}", view_matrix);
         let projection_view_matrix =  projection_matrix * view_matrix;
-        println!("projection_view_matrix amtrix : {:?}", projection_view_matrix);
+        println!("projection_view_matrix matrix : {:?}", projection_view_matrix);
         Self {
             transform: transform,
             projection_matrix: projection_matrix,
@@ -35,20 +38,17 @@ impl Camera {
     }
 
     pub fn recalculate_projection_view_matrix(&mut self) -> () {
-        let translation_matrix = Matrix4::from_translation(self.transform.translation);
-        let orientation_matrix = Matrix4::from_axis_angle(self.transform.rotation.v.normalize(), Deg {0: self.transform.rotation.s});
+        let translation_matrix = Mat4::from_translation(self.transform.translation);
+        let orientation_matrix = Mat4::from_axis_angle(self.transform.rotation.xyz().normalize(), self.transform.rotation.to_axis_angle().1);
 
-        self.view_matrix = (translation_matrix * orientation_matrix).invert().unwrap();
+        self.view_matrix = (translation_matrix * orientation_matrix).inverse();
         self.projection_view_matrix = self.projection_matrix * self.view_matrix;
     }
 }
 
 impl Entity for Camera {
-    fn get_id(&self) -> &String {
-        &self.id
-    }
-    fn update(self: &mut Camera) -> () {
-       return;
+    fn tick(self: &mut Camera) -> Option<TickAction> {
+        None
     }
 }
 
@@ -61,7 +61,7 @@ impl Movable for Camera {
         self.recalculate_projection_view_matrix();
     }
 
-    fn move_xyz(& mut self, amount: Vector3<f32>) -> () {
+    fn move_xyz(& mut self, amount: Vec3) -> () {
         self.move_x(amount.x);
         self.move_y(amount.y);
         self.move_z(amount.z);

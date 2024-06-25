@@ -1,11 +1,12 @@
 use std::{collections::hash_map::DefaultHasher, hash::Hasher, ops::{Deref, DerefMut}};
 
 use bytemuck::{Zeroable, Pod};
-use cgmath::Vector3;
+use glam::Vec3;
 use rand::Rng;
+use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VertexMacro};
 
-use crate::{physics::physics_traits::{Transform, Movable, HasTransform}, rendering::{rendering_traits::UpdateGraphics}, engine::general_traits::Entity};
-
+use crate::{engine::general_traits::{Entity, TickAction}, physics::physics_traits::{HasTransform, Movable, Transform}};
+use core::hash::Hash;
 use super::rendering_traits::{HasMesh, RenderableEntity};
 
 use nanoid::nanoid;
@@ -13,12 +14,12 @@ use nanoid::nanoid;
 
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Debug, Zeroable, Pod)]
+#[derive(Default, Copy, Clone, Debug, BufferContents, VertexMacro)]
 pub struct Vertex {
+    #[format(R32G32B32_SFLOAT)]
     pub position: [f32; 3],
     //pub color: [f32; 4]
 }
-vulkano::impl_vertex!(Vertex, position);
 
 impl Deref for Vertex {
     type Target = [f32; 3];
@@ -38,34 +39,45 @@ impl DerefMut for Vertex {
 
 #[derive(Debug, Clone)]
 pub struct Mesh {
+    pub name: String,
     pub data: Vec<Vertex>,
-    pub vertex_count: usize,
-    pub hash: u64
 }
 
 impl Mesh {
-    pub fn new(data: Vec<Vertex>) -> Self {
-        let len = data.len();
-        let hash = Self::calculate_mesh_hash(&data);
+    pub fn new(data: Vec<Vertex>, name: String) -> Self {
         Self {
+            name,
             data,
-            vertex_count: len,
-            hash: hash
         }
     }
 
-    fn calculate_mesh_hash(data: &Vec<Vertex>) -> u64 {
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+}
+
+impl PartialEq for Mesh {
+    fn eq(&self, other: &Self) -> bool {
         let mut hasher = DefaultHasher::new();
-        
+        self.hash(& mut hasher) == other.hash(& mut hasher)
+    }
+}
+
+impl Eq for Mesh {
+
+}
+
+impl Hash for Mesh {
+    fn hash<H>(&self, state: &mut H) where H: Hasher { 
         let mut result = Vec::new();
-        for triangle in data {
+        for triangle in &self.data {
             for j in triangle.position {
                 let rounded_coord =  (j * 100_f32) as u8;
                 result.push(rounded_coord);
             }
         }
-        hasher.write(&result);
-        hasher.finish()
+        state.write(&result);
+        state.finish();
     }
 }
 
@@ -91,15 +103,14 @@ impl Triangle {
 
 #[derive(Debug, Clone)]
 pub struct Cube {
-    pub bounds: Vector3<f32>, 
+    pub bounds: Vec3,
     transform: Transform,
     mesh: Option<Mesh>,
     id: String,
-    //pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>
 }
 
 impl Cube {
-    pub fn new(bounds: Vector3<f32>, transform: Transform) -> Self {
+    pub fn new(bounds: Vec3, transform: Transform) -> Self {
         Self {
             bounds,
             transform,
@@ -112,25 +123,22 @@ impl Cube {
 impl RenderableEntity for Cube {}
 
 impl HasTransform for Cube {
-    fn get_transform(&self) -> &Transform {
-        &self.transform
+    fn get_transform(&self) -> Transform {
+        self.transform
     }
 }
 
 impl Entity for Cube {
-    fn get_id(&self) -> &String {
-        &self.id
-    }
-
-    fn update(&mut self) -> () {
+    fn tick(&mut self) -> Option<TickAction> {
         let amount: f32 = rand::thread_rng().gen_range(-0.02_f32..0.02_f32);
         self.move_x(amount);
+        Some(TickAction::HasMoved(self.transform))
     }
 }
 
 impl Default for Cube {
     fn default() -> Self {
-        let bounds = Vector3 { x: 0.25, y: 0.125, z: 0.25 };
+        let bounds = Vec3 { x: 0.25, y: 0.125, z: 0.25 };
         
         Self {
             bounds : bounds,
@@ -147,7 +155,7 @@ impl Movable for Cube {
         self.move_x(amount);
     }
 
-    fn move_xyz(&mut self, amount: Vector3<f32>) -> () {
+    fn move_xyz(&mut self, amount: Vec3) -> () {
         self.move_x(amount.x);
         self.move_y(amount.y);
         self.move_z(amount.z);
@@ -173,14 +181,14 @@ impl Movable for Cube {
 }
 
 impl HasMesh for Cube {
-    fn set_mesh(&mut self) -> () {
+    fn get_mesh(&mut self, name: String) -> Mesh {
         let mut result = Vec::new();
         for triangle in self.get_data() {
             for i in 0..triangle.vertices.len() {
                 result.push(triangle.vertices[i])
             }
         }
-        self.mesh = Some(Mesh::new(result));
+        Mesh::new(result, name)
     }
 
     fn get_data(& self) -> Vec<Triangle> {
@@ -238,10 +246,4 @@ impl HasMesh for Cube {
 
         resulting_mesh
     }
-    
-    fn get_mesh(& self) -> &Mesh {
-        self.mesh.as_ref().unwrap()
-    }
 }
-
-

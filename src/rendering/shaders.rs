@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use vulkano::{shader::{ShaderModule, ShaderCreationError}, device::Device};
+use vulkano::{device::Device, shader::ShaderModule, Validated, VulkanError};
 
 mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        src: "
+        src: r"
             #version 460
 
             layout(location = 0) in vec3 position;
@@ -42,7 +42,7 @@ pub struct Shaders {
 }
 
 impl Shaders {
-    pub fn load(device: Arc<Device>) -> Result<Self, ShaderCreationError> {
+    pub fn load(device: Arc<Device>) -> Result<Self, Validated<VulkanError>> {
         Ok(Self {
             vertex_shader: vertex_shader::load(device.clone())?,
             fragment_shader: fragment_shader::load(device.clone())?
