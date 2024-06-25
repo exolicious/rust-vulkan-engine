@@ -1,10 +1,12 @@
 use std::{borrow::Borrow, cell::RefCell, collections::HashMap, mem::size_of, sync::Arc};
+use egui_winit_vulkano::egui::{epaint::{self, Primitive}, ClippedPrimitive};
 use glam::Mat4;
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassEndInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, image::Image, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, RenderPass}};
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents, SubpassEndInfo}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::Device, image::{view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, RenderPass, RenderPassCreateInfo, Subpass}};
 use crate::{engine::camera::Camera, physics::physics_traits::Transform};
 use super::{frame::Frame, primitives::Mesh, transform_buffers::TransformBuffers, vertex_buffers::VertexBuffer};
 use std::error::Error;
 use core::fmt::Error as ErrorVal;
+use vulkano::format::Format;
 
 
 pub struct BufferManager {
@@ -19,17 +21,25 @@ pub struct BufferManager {
     pub entities_transform_ids: Vec<String>,
     pub entites_to_update: HashMap<String, Transform>,
     pipeline: Arc<GraphicsPipeline>,
+    gui_image: Arc<Image>,
+    pub gui_image_view: Arc<ImageView>,
 }
 
 impl BufferManager {
     pub fn new(device: Arc<Device>, pipeline: Arc<GraphicsPipeline>, swapchain_images: Vec<Arc<Image>>, render_pass: Arc<RenderPass>, queue_family_index: u32) -> Self {
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             device.clone(), 
-            StandardDescriptorSetAllocatorCreateInfo::default());
+            StandardDescriptorSetAllocatorCreateInfo::default()
+        );
+
         let command_buffer_allocator = StandardCommandBufferAllocator::new(
             device.clone(),
-            StandardCommandBufferAllocatorCreateInfo::default(),
+            StandardCommandBufferAllocatorCreateInfo {
+                secondary_buffer_count: 32,
+                ..Default::default()
+            }
         );
+
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
         let frames = BufferManager::build_frames(device.clone(), pipeline.clone(), swapchain_images.clone(), render_pass.clone(), queue_family_index);
@@ -39,6 +49,23 @@ impl BufferManager {
 
         let entities_transform_ids = Vec::new();
         let entites_to_update = HashMap::new();
+
+        let gui_image: Arc<Image> = Image::new(
+            memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: Format::R8G8B8A8_UNORM,
+                extent: [150, 150, 1],
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::TRANSFER_SRC | ImageUsage::SAMPLED | ImageUsage::COLOR_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let gui_image_view = ImageView::new_default(gui_image.clone()).unwrap();
 
         Self {
             vertex_buffer,
@@ -52,6 +79,8 @@ impl BufferManager {
             entites_to_update,
             pipeline,
             queue_family_index,
+            gui_image,
+            gui_image_view
         }
     }
 
@@ -61,7 +90,6 @@ impl BufferManager {
         for (swapchain_image_index, swapchain_image) in swapchain_images.iter().enumerate() {
             let mut temp_frame = Frame::new(
                 swapchain_image.clone(), 
-                device.clone(), 
                 swapchain_image_index
             );
             temp_frame.init_framebuffer(render_pass.clone());
@@ -139,9 +167,9 @@ impl BufferManager {
         let mut write_lock = self.vp_camera_buffers[0].write()?;
         *write_lock = camera.projection_view_matrix.to_cols_array_2d();
         write_lock = self.vp_camera_buffers[1].write()?;
-        *write_lock = camera.projection_view_matrix.to_cols_array_2d();;
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
         write_lock = self.vp_camera_buffers[2].write()?;
-        *write_lock = camera.projection_view_matrix.to_cols_array_2d();;
+        *write_lock = camera.projection_view_matrix.to_cols_array_2d();
         println!("Successfully copied camera vp_matrix: {:?} to vp buffer with index: {}", camera.projection_view_matrix, next_swapchain_image_index);
         Ok(())
     }
@@ -168,12 +196,12 @@ impl BufferManager {
         .unwrap()
     }
 
-    pub fn build_command_buffer(& self, acquired_swapchain_image: usize) -> Arc<PrimaryAutoCommandBuffer> {
+    pub fn build_command_buffer(& self, acquired_swapchain_image: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Arc<PrimaryAutoCommandBuffer> {
         //println!("Bulding command buffer for index: {}", acquired_swapchain_image);
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
             self.queue_family_index,
-            CommandBufferUsage::MultipleSubmit,
+            CommandBufferUsage::OneTimeSubmit,
         ) 
         .unwrap();
 
@@ -181,11 +209,10 @@ impl BufferManager {
         descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
         descriptor_sets.push(self.get_transform_buffer_descriptor_set(acquired_swapchain_image).clone());
         
-        
         let builder = self.copy_transform_buffer_data(& mut command_buffer_builder, acquired_swapchain_image);
-
+        
         let vertex_buffer = self.vertex_buffer.vertex_buffer.clone();
-       // println!("Vertex buffer with index {acquired_swapchain_image} has the following data {a}");
+        // println!("Vertex buffer with index {acquired_swapchain_image} has the following data {a}");
         let builder = builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -206,7 +233,7 @@ impl BufferManager {
                 descriptor_sets,
             )
             .unwrap();
-
+        
         for mesh in self.vertex_buffer.mesh_accessor.meshes.iter() {
             let instances_count = self.vertex_buffer.mesh_accessor.mesh_name_instance_count_map.get(&mesh.name).unwrap();
             let vertex_count = mesh.data.len() as u32;
@@ -217,12 +244,23 @@ impl BufferManager {
                 .unwrap();
             //println!("added draw call to command buffer successfully");
         }
+
         builder
+            .next_subpass(Default::default(), SubpassBeginInfo {
+                contents: SubpassContents::SecondaryCommandBuffers,
+                ..Default::default()
+            }
+            )
+            .unwrap();
+        println!("tryna add execution of gui secondary command buffer in subpass");
+        builder
+        .execute_commands(gui_command_buffer)
+        .unwrap()
         .end_render_pass(SubpassEndInfo::default())
         .unwrap();
         
-
         let command_buffer = command_buffer_builder.build().unwrap();
+        
         command_buffer
     }
 

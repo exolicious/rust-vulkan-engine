@@ -1,5 +1,6 @@
 use std::{collections::HashMap, error::Error, ops::Index, sync::Arc};
 
+use egui_winit_vulkano::egui::epaint;
 use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}};
 
 use super::{mesh_accessor::{MeshAccessor, MeshAccessorAddEntityResult}, primitives::{Mesh, Vertex}};

@@ -16,7 +16,7 @@ winit = "0.28"
 glam = "0.28.0"
 nanoid = "0.4.0"
 rand = "0.8"
-egui_winit_vulkano = "0.21.0"
+egui_winit_vulkano = "0.27.0"
 
 
 

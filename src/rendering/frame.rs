@@ -7,21 +7,19 @@ use winit::window::Window;
 use super::{buffer_manager::BufferManager, mesh_accessor};
 
 pub struct Frame {
-    swapchain_image: Arc<Image>,
+    pub swapchain_image: Arc<Image>,
     pub swapchain_image_view: Arc<ImageView>,
-    device: Arc<Device>, 
     swapchain_image_index: usize,
     pub framebuffer: Option<Arc<Framebuffer>>,
     pub draw_command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<Image>, device: Arc<Device>, swapchain_image_index: usize) -> Self {
+    pub fn new(swapchain_image: Arc<Image>, swapchain_image_index: usize) -> Self {
         let swapchain_image_view =  ImageView::new_default(swapchain_image.clone()).unwrap();
         Self {
             swapchain_image,    
             swapchain_image_view,
-            device,
             swapchain_image_index,
             framebuffer: None,
             draw_command_buffer: None,

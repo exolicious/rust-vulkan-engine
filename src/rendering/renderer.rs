@@ -1,8 +1,8 @@
 use std::{sync::Arc};
 
-use vulkano::{command_buffer::CommandBufferExecFuture, device::{physical::{PhysicalDevice, PhysicalDeviceType}, Device, DeviceCreateInfo, 
-DeviceExtensions, Queue, QueueCreateInfo, QueueFlags}, image::{Image, ImageUsage}, instance::Instance, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, 
-    ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{RenderPass, Subpass}, shader::ShaderModule, single_pass_renderpass, swapchain::{PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{future::{FenceSignalFuture, JoinFuture}, GpuFuture}, Validated, ValidationError, VulkanError};
+use vulkano::{command_buffer::{CommandBufferExecFuture, SecondaryAutoCommandBuffer}, device::{physical::{PhysicalDevice, PhysicalDeviceType}, Device, DeviceCreateInfo, 
+DeviceExtensions, Queue, QueueCreateInfo, QueueFlags}, image::{Image, ImageUsage}, instance::Instance, ordered_passes_renderpass, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, 
+    ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{RenderPass, Subpass}, shader::ShaderModule, single_pass_renderpass, swapchain::{PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{future::{FenceSignalFuture, JoinFuture}, GpuFuture}, Validated, ValidationError, VulkanError};
 use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
 
 use crate::{engine::scene::Scene, initialize::vulkan_instancing::get_vulkan_instance, physics::physics_traits::Transform};
@@ -28,19 +28,19 @@ pub enum EngineEvent {
 pub struct Renderer {
     vulkan_instance: Arc<Instance>,
     window: Arc<Window>, 
-    surface: Arc<Surface>,
+    pub surface: Arc<Surface>,
     physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     queue_family_index: u32,
-    queue: Arc<Queue>,
+    pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
-
     vertex_shader: Arc<ShaderModule>,
     fragment_shader: Arc<ShaderModule>,
-
     pub buffer_manager: BufferManager,
     active_scene: Arc<Scene>,
     pub currenty_not_displayed_swapchain_image_index: usize,
+    pub render_pass: Arc<RenderPass>,
+    pub graphics_pipeline: Arc<GraphicsPipeline>
 }
 
 
@@ -59,8 +59,8 @@ impl Renderer {
         let (swapchain, swapchain_images) = Renderer::build_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), window.clone(), device.clone());
         let render_pass = Renderer::build_render_pass(device.clone(), swapchain.clone());
         let (vertex_shader, fragment_shader) = Renderer::build_shaders(device.clone());
-        let pipeline = Renderer::build_pipeline(vertex_shader.clone(), fragment_shader.clone(), device.clone(), render_pass.clone(), None);
-        let buffer_manager = BufferManager::new(device.clone(), pipeline, swapchain_images, render_pass, queue_family_index);
+        let graphics_pipeline = Renderer::build_pipeline(vertex_shader.clone(), fragment_shader.clone(), device.clone(), render_pass.clone(), None);
+        let buffer_manager = BufferManager::new(device.clone(), graphics_pipeline.clone(), swapchain_images, render_pass.clone(), queue_family_index);
         let active_scene = Arc::new(Scene::new());
         let currenty_not_displayed_swapchain_image_index = 0;
 
@@ -76,6 +76,8 @@ impl Renderer {
             buffer_manager,
             vertex_shader,
             fragment_shader,
+            render_pass,
+            graphics_pipeline,
             active_scene,
             currenty_not_displayed_swapchain_image_index
         }
@@ -161,21 +163,21 @@ impl Renderer {
     }
 
     pub fn build_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
-        let render_pass = single_pass_renderpass!(
+        let render_pass = ordered_passes_renderpass!(
             device.clone(),
             attachments: {
                 // `foo` is a custom name we give to the first and only attachment.
-                foo: {
+                color: {
                     format: swapchain.image_format(),  // set the format the same as the swapchain
                     samples: 1,
                     load_op: Clear,
                     store_op: Store,
                 },
             },
-            pass: {
-                color: [foo],       // Repeat the attachment name here.
-                depth_stencil: {},
-            },
+            passes: [
+                    { color: [color], depth_stencil: {}, input: [] },
+                    { color: [color], depth_stencil: {}, input: [] },
+                ],
         )
         .unwrap();
 
@@ -255,10 +257,10 @@ impl Renderer {
         pipeline
     }
 
-    pub fn get_future(& mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, Validated<VulkanError>>  {
+    pub fn get_future(& mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, Validated<VulkanError>>  {
         //let after_future = gui.draw_on_image(previous_future, self.frames[acquired_swapchain_index].swapchain_image_view.clone());
         //println!("acquired_swapchain_index: {}", acquired_swapchain_index);
-        let command_buffer = self.buffer_manager.build_command_buffer(acquired_swapchain_index);
+        let command_buffer = self.buffer_manager.build_command_buffer(acquired_swapchain_index, gui_command_buffer);
         previous_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), command_buffer)
@@ -342,7 +344,6 @@ impl Renderer {
         };
 
         viewport.extent = new_dimensions.into();
-        
     }
 
     //fn synch_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, entity: Arc<dyn RenderableEntity>) -> () {

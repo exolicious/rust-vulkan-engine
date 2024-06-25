@@ -1,9 +1,9 @@
-use egui_winit_vulkano::egui::{CentralPanel, Context, RawInput};
+use egui_winit_vulkano::{egui::{self, epaint::Primitive, pos2, Area, CentralPanel, ClippedPrimitive, Context, Label, RawInput, RichText, ScrollArea, TextEdit, TextStyle, Vec2}, Gui, GuiConfig};
 use engine::{engine::Engine, scene::Scene};
 use glam::Vec3;
 use physics::physics_traits::Transform;
 use rendering::{renderer::Renderer};
-use vulkano::{swapchain, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, VulkanError};
+use vulkano::{format::Format, image::view::ImageView, render_pass::Subpass, single_pass_renderpass, swapchain, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, VulkanError};
 use winit::{event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent}, event_loop::{ControlFlow, EventLoop}};
 
 pub mod initialize;
@@ -11,7 +11,7 @@ pub mod rendering;
 pub mod physics;
 pub mod engine;
 
-use std::{env, sync::Arc};
+use std::{env, sync::{atomic::Ordering, Arc}};
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
@@ -24,6 +24,7 @@ fn main() {
     //    .with_inner_size(LogicalSize::new(800, 600))
     //    .build(&event_loop)
     //    .unwrap();
+
     let mut engine = Engine::new();
     let renderer = Renderer::new(&event_loop);
 
@@ -63,16 +64,22 @@ fn main() {
 fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Renderer) -> () {
     //init scene
     // Create egui context
-    let mut egui_ctx = Context::default();
-
-    //start event loop
-    let frames_in_flight = renderer.buffer_manager.frames.len();
-    let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
-    let mut previous_fence_i = 0;
     let mut window_resized = false;
     let mut recreate_swapchain = false;
-
+    let mut previous_frame_end = Some(sync::now(renderer.device.clone()).boxed());
     //let mut gui = Gui::new(&self.event_loop, self.engine.renderer.surface.clone(), None, self.engine.renderer.active_queue.clone(), false);
+    
+
+    let gui_subpass = Subpass::from(renderer.render_pass.clone(), 1).unwrap();
+    let mut gui = Gui::new_with_subpass(
+        &event_loop,
+        renderer.surface.clone(),
+        renderer.queue.clone(),
+        gui_subpass,
+        renderer.buffer_manager.gui_image_view.format(),
+        GuiConfig::default(),
+    );
+    let mut code = CODE.to_owned();
 
     event_loop.run(move |event, _,  control_flow| {
         match event {
@@ -85,6 +92,9 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
             } => {
                 window_resized = true;
             }
+            Event::RedrawRequested(_) => {
+                
+            },
             Event::MainEventsCleared => {
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
@@ -94,22 +104,6 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                         renderer.recreate_pipeline();
                     }
                 }
-
-                egui_ctx.begin_frame(RawInput::default());
-
-                //// Draw your UI here
-                //CentralPanel::default().show(&egui_ctx, |ui| {
-                //    ui.label("Hello, egui!");
-                //});
-//
-                //let output = egui_ctx.end_frame();
-                //let paint_jobs = egui_ctx.tessellate(output.shapes);
-//
-                //// You should provide your own rendering code here
-                //// For simplicity, let's just print out the paint jobs
-                //for primitive in paint_jobs {
-                //    println!("Render mesh: {:?}", primitive);
-                //}
 
                 println!("Trying to acquire swapchain image!");
 
@@ -133,39 +127,73 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                 println!("swapchain_image_index: {}", swapchain_image_index);
 
                 // wait for the fence related to this image to finish (normally this would be the oldest fence)
-                if let Some(image_fence) = &fences[swapchain_image_index as usize] {
-                    image_fence.wait(None).unwrap();
-                    engine.work_off_event_queue(&mut renderer, swapchain_image_index as usize);
-                }
+                //if let Some(image_fence) = &fences[swapchain_image_index as usize] {
+                //    image_fence.wait(None).unwrap();
+                //    engine.work_off_event_queue(&mut renderer, swapchain_image_index as usize);
+                //}
 
-                let previous_future = match fences[previous_fence_i].clone() {
-                    None => {
-                        let mut now = sync::now(renderer.device.clone());
-                        now.cleanup_finished();
-                        now.boxed()
-                    }
-                    Some(fence) => fence.boxed(),
-                };
+                acquire_future.wait(None).unwrap();
+                previous_frame_end.as_mut().unwrap().cleanup_finished();
+                engine.work_off_event_queue(&mut renderer, swapchain_image_index as usize);
                 
+                gui.immediate_ui(|gui| {
+                    let ctx = gui.context();
+                    let panel_width = 250.0;
+                    egui::Window::new("My Window").show(&ctx, |ui| {
+                        ui.label("Hello World!");
+                     });
+                    //// Create a fixed-size area
+                    //Area::new("my_fixed_panel")
+                    //    .fixed_pos(pos2(10.0, 10.0)) // Position the panel as needed
+                    //    .show(&ctx, |ui| {
+                    //        ui.set_min_width(panel_width);
+                    //        ui.set_max_width(panel_width);
+//
+                    //        ui.vertical(|ui| {
+                    //            ui.add_sized(Vec2::new(25.0, 0.0), TextEdit::singleline(&mut String::new()));
+                    //            
+                    //            ui.vertical_centered(|ui| {
+                    //                ui.add(Label::new("Hi there!"));
+                    //                ui.label(RichText::new("Rich Text").size(32.0));
+                    //            });
+//
+                    //            ui.separator();
+//
+                    //            ui.columns(2, |columns| {
+                    //                ScrollArea::vertical().id_source("source").show(&mut columns[0], |ui| {
+                    //                    ui.add(TextEdit::multiline(&mut code).font(TextStyle::Monospace));
+                    //                });
+                    //            });
+                    //        });
+                    //    });
+                });
+                println!("draw on subpass image");
+                
+                let image_extents = get_image_extents_2d(renderer.buffer_manager.frames[swapchain_image_index as usize].swapchain_image_view.clone());
+                let gui_command_buffer = gui.draw_on_subpass_image(image_extents);
+                
+                println!("draw on subpass image worked!!");
                 let future = renderer.get_future(
-                    previous_future,
+                    previous_frame_end.take().unwrap(),
                     acquire_future,
-                    swapchain_image_index as usize
+                    swapchain_image_index as usize,
+                    gui_command_buffer
                 );
 
-                fences[swapchain_image_index as usize] = match future {
-                    Ok(value) => Some(Arc::new(value)),
-                    Err(Validated) => {
+                match future.map_err(Validated::unwrap) {
+                    Ok(future) => {
+                        previous_frame_end = Some(future.boxed());
+                    }
+                    Err(VulkanError::OutOfDate) => {
                         recreate_swapchain = true;
-                        None
+                        previous_frame_end = Some(sync::now(renderer.device.clone()).boxed());
                     }
                     Err(e) => {
-                        println!("Failed to flush future: {:?}", e);
-                        None
+                        println!("failed to flush future: {e}");
+                        // previous_frame_end = Some(sync::now(device.clone()).boxed());
                     }
-                };
+                }
                 println!("Setting previous fence index");
-                previous_fence_i = swapchain_image_index as usize;
             },
             Event::WindowEvent { event, .. } => {
                 //let pass_events_to_game = !gui.update(&event); // if this returns false, then egui wont have to handle the request and we can pass it to the game
@@ -198,4 +226,16 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
             _ => ()
         }
     });
+}
+
+const CODE: &str = r"
+# Some markup
+```
+let mut gui = Gui::new(&event_loop, renderer.surface(), None, renderer.queue(), SampleCount::Sample1);
+let mut gui = Gui::new(&event_loop, renderer.surface(), None, renderer.queue(), SampleCount::Sample1);
+```
+";
+
+fn get_image_extents_2d(swapchain_image_view: Arc<ImageView>) -> [u32; 2] {
+    [swapchain_image_view.image().extent()[0], swapchain_image_view.image().extent()[1]]
 }
