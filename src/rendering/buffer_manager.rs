@@ -121,10 +121,10 @@ impl BufferManager {
         vp_matrix_buffers
     }
 
-    pub fn register_entity(&mut self, entity_transform: Transform, entity_mesh: Mesh, next_swapchain_image_index: usize, entity_index: usize) -> Result<(), Box<dyn Error>> {
-        println!("Trying to register entity in frame {}", next_swapchain_image_index);
-        self.vertex_buffer.bind_entity_mesh(entity_mesh, next_swapchain_image_index)?;
-        self.transform_buffers.borrow_mut().bind_entity_transform(entity_transform, entity_index, next_swapchain_image_index).unwrap();
+    pub fn register_entity(&mut self, entity_transform: Transform, entity_mesh: Mesh, frame_in_flight_index: usize, entity_index: usize) -> Result<(), Box<dyn Error>> {
+        println!("Trying to register entity in frame {}", frame_in_flight_index);
+        self.vertex_buffer.bind_entity_mesh(entity_mesh, frame_in_flight_index)?;
+        self.transform_buffers.borrow_mut().bind_entity_transform(entity_transform, entity_index, frame_in_flight_index).unwrap();
         Ok(())
     }
 
@@ -185,18 +185,18 @@ impl BufferManager {
         .unwrap()
     }
 
-    pub fn get_transform_buffer_descriptor_set(& self, next_swapchain_image_index: usize) -> Arc<PersistentDescriptorSet> {
+    pub fn get_transform_buffer_descriptor_set(& self, frame_in_flight_index: usize) -> Arc<PersistentDescriptorSet> {
         let layout = self.pipeline.layout().set_layouts().get(1).unwrap();
         PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
             layout.clone(),
-            [WriteDescriptorSet::buffer(0, self.transform_buffers.borrow()[next_swapchain_image_index].clone())],
+            [WriteDescriptorSet::buffer(0, self.transform_buffers.borrow()[frame_in_flight_index].clone())],
             []
         )
         .unwrap()
     }
 
-    pub fn build_command_buffer(& self, acquired_swapchain_image: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Arc<PrimaryAutoCommandBuffer> {
+    pub fn build_command_buffer(& self, acquired_swapchain_image: usize, frame_in_flight_index: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Arc<PrimaryAutoCommandBuffer> {
         //println!("Bulding command buffer for index: {}", acquired_swapchain_image);
         let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
@@ -206,10 +206,10 @@ impl BufferManager {
         .unwrap();
 
         let mut descriptor_sets = Vec::new();
-        descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(acquired_swapchain_image).clone());
-        descriptor_sets.push(self.get_transform_buffer_descriptor_set(acquired_swapchain_image).clone());
+        descriptor_sets.push(self.get_vp_matrix_buffer_descriptor_set(frame_in_flight_index).clone());
+        descriptor_sets.push(self.get_transform_buffer_descriptor_set(frame_in_flight_index).clone());
         
-        let builder = self.copy_transform_buffer_data(& mut command_buffer_builder, acquired_swapchain_image);
+        let builder = self.copy_transform_buffer_data(& mut command_buffer_builder, frame_in_flight_index);
         
         let vertex_buffer = self.vertex_buffer.vertex_buffer.clone();
         // println!("Vertex buffer with index {acquired_swapchain_image} has the following data {a}");
@@ -265,20 +265,18 @@ impl BufferManager {
     }
 
     //todo: make this work with fragmented buffers...
-    fn copy_transform_buffer_data<'a>(&'a self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, acquired_swapchain_image: usize) -> & mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
-        match self.transform_buffers.borrow_mut().get_tansform_buffer_copy_payload(acquired_swapchain_image) {
+    fn copy_transform_buffer_data<'a>(&'a self, builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, frame_in_flight_index: usize) -> & mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+        match self.transform_buffers.borrow_mut().get_tansform_buffer_copy_payload(frame_in_flight_index) {
             None => return builder,
             Some(payload) => {
                 println!("DOING TRANSFORM BUFFER SYNC");
-                for target_buffer in payload.target_buffers.iter() {
-                    let mut copy_info = CopyBufferInfo::buffers(payload.src_buffer.clone(), target_buffer.clone());
-                    let first_index_of_newly_added_transforms = *payload.newly_added_transform_indexes.first().unwrap() as u64;
-                    println!("SIZE OF TRANSFORM IN BYTES : {}", size_of::<Mat4>() as u64);
-                    copy_info.regions[0].src_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
-                    copy_info.regions[0].dst_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
-                    copy_info.regions[0].size = (size_of::<Mat4>() * payload.newly_added_transform_indexes.len()) as u64;
-                    builder.copy_buffer(copy_info).unwrap();
-                }
+                let mut copy_info = CopyBufferInfo::buffers(payload.src_buffer.clone(), payload.target_buffer.clone());
+                let first_index_of_newly_added_transforms = *payload.newly_added_transform_indexes.first().unwrap() as u64;
+                println!("SIZE OF TRANSFORM IN BYTES : {}", size_of::<Mat4>() as u64);
+                copy_info.regions[0].src_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
+                copy_info.regions[0].dst_offset = first_index_of_newly_added_transforms * size_of::<Mat4>() as u64;
+                copy_info.regions[0].size = (size_of::<Mat4>() * payload.newly_added_transform_indexes.len()) as u64;
+                builder.copy_buffer(copy_info).unwrap();
                 builder
             }
         }

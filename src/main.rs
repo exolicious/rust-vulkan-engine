@@ -31,7 +31,7 @@ fn main() {
     let scene_1 = Arc::new(Scene::new());
     
     engine.set_active_scene(scene_1.clone());
-    let translation1 = Some(Vec3{x: 1., y: 1., z: 2.});
+    let translation1 = Some(Vec3{x: 10., y: 1., z: 2.});
     engine.add_cube_to_scene(translation1);
     //let translation2 = Some(Vec3{x: -2., y: -1., z: 5.});
     //engine.add_cube_to_scene(translation2);
@@ -67,6 +67,9 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
     let mut window_resized = false;
     let mut recreate_swapchain = false;
     let mut previous_frame_end = Some(sync::now(renderer.device.clone()).boxed());
+    let swapchain_images_count = renderer.buffer_manager.frames.len();
+    let mut frame_in_flight_index = 0;
+    
     //let mut gui = Gui::new(&self.event_loop, self.engine.renderer.surface.clone(), None, self.engine.renderer.active_queue.clone(), false);
     
 
@@ -134,7 +137,7 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
 
                 acquire_future.wait(None).unwrap();
                 previous_frame_end.as_mut().unwrap().cleanup_finished();
-                engine.work_off_event_queue(&mut renderer, swapchain_image_index as usize);
+                engine.work_off_event_queue(&mut renderer, frame_in_flight_index as usize);
                 
                 gui.immediate_ui(|gui| {
                     let ctx = gui.context();
@@ -142,30 +145,30 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                     egui::Window::new("My Window").show(&ctx, |ui| {
                         ui.label("Hello World!");
                      });
-                    //// Create a fixed-size area
-                    //Area::new("my_fixed_panel")
-                    //    .fixed_pos(pos2(10.0, 10.0)) // Position the panel as needed
-                    //    .show(&ctx, |ui| {
-                    //        ui.set_min_width(panel_width);
-                    //        ui.set_max_width(panel_width);
-//
-                    //        ui.vertical(|ui| {
-                    //            ui.add_sized(Vec2::new(25.0, 0.0), TextEdit::singleline(&mut String::new()));
-                    //            
-                    //            ui.vertical_centered(|ui| {
-                    //                ui.add(Label::new("Hi there!"));
-                    //                ui.label(RichText::new("Rich Text").size(32.0));
-                    //            });
-//
-                    //            ui.separator();
-//
-                    //            ui.columns(2, |columns| {
-                    //                ScrollArea::vertical().id_source("source").show(&mut columns[0], |ui| {
-                    //                    ui.add(TextEdit::multiline(&mut code).font(TextStyle::Monospace));
-                    //                });
-                    //            });
-                    //        });
-                    //    });
+                    // Create a fixed-size area
+                    Area::new("my_fixed_panel")
+                        .fixed_pos(pos2(10.0, 10.0)) // Position the panel as needed
+                        .show(&ctx, |ui| {
+                            ui.set_min_width(panel_width);
+                            ui.set_max_width(panel_width);
+                        
+                            ui.vertical(|ui| {
+                                ui.add_sized(Vec2::new(25.0, 0.0), TextEdit::singleline(&mut String::new()));
+                                
+                                ui.vertical_centered(|ui| {
+                                    ui.add(Label::new("Hi there!"));
+                                    ui.label(RichText::new("Rich Text").size(32.0));
+                                });
+                            
+                                ui.separator();
+                            
+                                ui.columns(2, |columns| {
+                                    ScrollArea::vertical().id_source("source").show(&mut columns[0], |ui| {
+                                        ui.add(TextEdit::multiline(&mut code).font(TextStyle::Monospace));
+                                    });
+                                });
+                            });
+                        });
                 });
                 println!("draw on subpass image");
                 
@@ -177,6 +180,7 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                     previous_frame_end.take().unwrap(),
                     acquire_future,
                     swapchain_image_index as usize,
+                    frame_in_flight_index,
                     gui_command_buffer
                 );
 
@@ -193,6 +197,8 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                         // previous_frame_end = Some(sync::now(device.clone()).boxed());
                     }
                 }
+                frame_in_flight_index = frame_in_flight_index + 1;
+                frame_in_flight_index = frame_in_flight_index % swapchain_images_count;
                 println!("Setting previous fence index");
             },
             Event::WindowEvent { event, .. } => {
@@ -210,7 +216,7 @@ fn start_engine(event_loop: EventLoop<()>, mut engine: Engine, mut renderer: Ren
                                 match key {
                                     VirtualKeyCode::Space => {
                                         println!("Called the match Key Event");
-                                        for _ in 0..2 {
+                                        for _ in 0..100 {
                                             engine.add_cube_to_scene(None);
                                         }
                                     },

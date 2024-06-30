@@ -257,10 +257,10 @@ impl Renderer {
         pipeline
     }
 
-    pub fn get_future(& mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, Validated<VulkanError>>  {
+    pub fn get_future(& mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize, frame_in_flight_index: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, Validated<VulkanError>>  {
         //let after_future = gui.draw_on_image(previous_future, self.frames[acquired_swapchain_index].swapchain_image_view.clone());
         //println!("acquired_swapchain_index: {}", acquired_swapchain_index);
-        let command_buffer = self.buffer_manager.build_command_buffer(acquired_swapchain_index, gui_command_buffer);
+        let command_buffer = self.buffer_manager.build_command_buffer(acquired_swapchain_index, frame_in_flight_index, gui_command_buffer);
         previous_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), command_buffer)
@@ -293,9 +293,9 @@ impl Renderer {
     }
 
     //todo: make it so that when multiple entities get added in one frame, they will get collected and not as many events get fired
-    pub fn entity_added_handler(&mut self, entity_transform: Transform, entity_mesh: Mesh, entity_index: usize, swapchain_image_index: usize) -> ()  {
+    pub fn entity_added_handler(&mut self, entity_transform: Transform, entity_mesh: Mesh, entity_index: usize, frame_in_flight_index: usize) -> ()  {
         println!("Entity added");
-        match self.buffer_manager.register_entity(entity_transform, entity_mesh, swapchain_image_index, entity_index) {
+        match self.buffer_manager.register_entity(entity_transform, entity_mesh, frame_in_flight_index, entity_index) {
             Ok(()) => {
                 println!("Successfully handled EntityAdded event");
             }

@@ -2,9 +2,7 @@ use std::{sync::Arc};
 
 use image::buffer;
 use vulkano::{command_buffer::{allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents, SubpassEndInfo}, device::Device, image::{view::ImageView, Image}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass}, NonExhaustive, ValidationError};
-use winit::window::Window;
 
-use super::{buffer_manager::BufferManager, mesh_accessor};
 
 pub struct Frame {
     pub swapchain_image: Arc<Image>,
