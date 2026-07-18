@@ -1,117 +1,92 @@
-use std::{error::Error, ops::Index, sync::Arc};
+use std::error::Error;
+use std::sync::Arc;
 
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}};
+use glam::Mat4;
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
-use crate::physics::physics_traits::Transform;
+const TRANSFORM_BUFFER_CAPACITY: usize = 4096;
 
-
+/// One storage buffer per swapchain image, plus the CPU-side authoritative
+/// model matrices indexed by entity. Each frame the matrices are written into
+/// the buffer of the image being rendered, so the per-image buffers never need
+/// to be synchronized with each other.
 pub struct TransformBuffers {
-    transform_buffers: Vec<Subbuffer<[[[f32; 4]; 4]]>>,
-    entity_to_transform_buffer_index: Vec<usize>,
-    pub newly_added_transform_indexes: Vec<usize>,
+    memory_allocator: Arc<StandardMemoryAllocator>,
+    buffers: Vec<Subbuffer<[[[f32; 4]; 4]]>>,
+    model_matrices: Vec<Mat4>,
 }
-
-pub struct TransformBufferCopyPayload {
-    pub src_buffer: Subbuffer<[[[f32; 4]; 4]]>, 
-    pub target_buffers: Vec<Subbuffer<[[[f32; 4]; 4]]>>, 
-    pub newly_added_transform_indexes: Vec<usize>
-}
-
-const INITIAL_TRANSFORM_BUFFER_SIZE: usize = 2_i32.pow(12) as usize; // 32 instances
 
 impl TransformBuffers {
-    pub fn new(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_images_length: usize) -> Self {
-        let mut transform_buffers = Vec::new();
-        for _ in 0..swapchain_images_length {
-            let transform_initial_data: [[[f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE] = [[[0_f32; 4]; 4]; INITIAL_TRANSFORM_BUFFER_SIZE];
-            let uniform_buffer = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                transform_initial_data.into_iter()
-            )
-            .unwrap();
-            transform_buffers.push(uniform_buffer);
-        }
-
-        let entity_to_transform_buffer_index = Vec::new();
-        let newly_added_transform_indexes = Vec::new();
+    pub fn new(memory_allocator: Arc<StandardMemoryAllocator>, swapchain_image_count: usize) -> Self {
+        let buffers = Self::build_buffers(&memory_allocator, swapchain_image_count);
         Self {
-            transform_buffers,
-            entity_to_transform_buffer_index,
-            newly_added_transform_indexes
+            memory_allocator,
+            buffers,
+            model_matrices: Vec::new(),
         }
     }
 
-    pub fn bind_entity_transform(&mut self, entity_transform: Transform, entity_id: usize, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let entity_transform_index = self.entity_to_transform_buffer_index.len();
-        self.entity_to_transform_buffer_index.push(entity_id);
-        self.newly_added_transform_indexes.push(entity_transform_index);
-        self.copy_transform_data_to_buffer(entity_transform_index, &entity_transform, next_swapchain_image_index)
+    fn build_buffers(
+        memory_allocator: &Arc<StandardMemoryAllocator>,
+        count: usize,
+    ) -> Vec<Subbuffer<[[[f32; 4]; 4]]>> {
+        (0..count)
+            .map(|_| {
+                Buffer::from_iter(
+                    memory_allocator.clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    vec![[[0f32; 4]; 4]; TRANSFORM_BUFFER_CAPACITY],
+                )
+                .unwrap()
+            })
+            .collect()
     }
 
- // pub fn get_synch_slice(&mut self) -> &[usize] {
- //     self.newly_added_transform_indexes.unwrap().as_slice()
- // }
-
-    pub fn update_entity_transform(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        self.copy_transform_data_to_buffer(entity_transform_index, entity_transform, next_swapchain_image_index)
+    pub fn set_image_count(&mut self, count: usize) {
+        if count != self.buffers.len() {
+            self.buffers = Self::build_buffers(&self.memory_allocator, count);
+        }
     }
 
-    fn copy_transform_data_to_buffer(& self, entity_transform_index: usize, entity_transform: &Transform, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        println!("DEBUG");
-        let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
-        write_lock[entity_transform_index] = entity_transform.model_matrix();
-        //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
+    pub fn push(&mut self, model_matrix: Mat4) -> Result<(), Box<dyn Error>> {
+        if self.model_matrices.len() >= TRANSFORM_BUFFER_CAPACITY {
+            return Err(format!(
+                "transform buffer capacity ({TRANSFORM_BUFFER_CAPACITY}) exceeded"
+            )
+            .into());
+        }
+        self.model_matrices.push(model_matrix);
         Ok(())
     }
 
-    pub fn copy_transform_data_slice_to_buffer(& self, entity_transforms_first_index: usize, entity_transforms_last_index: usize, entity_model_matrices: &[[[f32; 4]; 4]], next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let mut write_lock =  self.transform_buffers[next_swapchain_image_index].write()?;
-        write_lock[entity_transforms_first_index..entity_transforms_last_index].copy_from_slice(entity_model_matrices);
-        //println!("Successfully copied entity transform: {:?} to transform buffer with index: {}", entity_transform.model_matrix(), next_swapchain_image_index);
+    pub fn set(&mut self, entity_index: usize, model_matrix: Mat4) {
+        self.model_matrices[entity_index] = model_matrix;
+    }
+
+    /// Writes the model matrices into the given image's buffer, laid out in
+    /// `order` (instance slots grouped by mesh, see `MeshAccessor::instance_order`).
+    pub fn upload(
+        &self,
+        image_index: usize,
+        order: impl Iterator<Item = usize>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut write_lock = self.buffers[image_index].write()?;
+        for (slot, entity_index) in order.enumerate() {
+            write_lock[slot] = self.model_matrices[entity_index].to_cols_array_2d();
+        }
         Ok(())
     }
 
-    pub fn get_tansform_buffer_copy_payload(& mut self, unsynched_ahead_buffer_index: usize) -> Option<TransformBufferCopyPayload> {
-        let newly_added_transform_indexes = self.newly_added_transform_indexes.clone();
-        if newly_added_transform_indexes.len() < 1 {
-            return None
-        }
-        println!("Synching {} newly added transforms", newly_added_transform_indexes.len());
-        let most_up_to_date_buffer = &self.transform_buffers[unsynched_ahead_buffer_index];
-        let mut buffers_to_update = Vec::new();
-        println!("Source buffer index: {}", unsynched_ahead_buffer_index);
-        for (i, transform_buffer) in self.transform_buffers.iter().enumerate() {
-            if i != unsynched_ahead_buffer_index {
-                println!("Adding buffer with index: {} to TransformBufferCopyPayload", i);
-                buffers_to_update.push(transform_buffer.clone());
-            }
-        }
-        self.newly_added_transform_indexes.clear();
-        return Some(TransformBufferCopyPayload {
-            src_buffer: most_up_to_date_buffer.clone(), 
-            target_buffers: buffers_to_update, 
-            newly_added_transform_indexes
-        })
-    }
-
-    pub fn clear_newly_added_transform_indexes(& mut self) -> () {
-        self.newly_added_transform_indexes.clear();
-    }
-    
-}
-
-impl Index<usize> for TransformBuffers {
-    type Output = Subbuffer<[[[f32; 4]; 4]]>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.transform_buffers[index]
+    pub fn buffer(&self, image_index: usize) -> Subbuffer<[[[f32; 4]; 4]]> {
+        self.buffers[image_index].clone()
     }
 }

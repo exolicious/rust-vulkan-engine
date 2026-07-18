@@ -1,40 +1,28 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
-use image::buffer;
-use vulkano::{command_buffer::{allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}, AutoCommandBufferBuilder, BufferCopy, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents, SubpassEndInfo}, device::Device, image::{view::ImageView, Image}, pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint}, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass}, NonExhaustive, ValidationError};
-use winit::window::Window;
-
-use super::{buffer_manager::BufferManager, mesh_accessor};
+use vulkano::image::view::ImageView;
+use vulkano::image::Image;
+use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 
 pub struct Frame {
-    pub swapchain_image: Arc<Image>,
     pub swapchain_image_view: Arc<ImageView>,
-    swapchain_image_index: usize,
-    pub framebuffer: Option<Arc<Framebuffer>>,
-    pub draw_command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
+    pub framebuffer: Arc<Framebuffer>,
 }
 
 impl Frame {
-    pub fn new(swapchain_image: Arc<Image>, swapchain_image_index: usize) -> Self {
-        let swapchain_image_view =  ImageView::new_default(swapchain_image.clone()).unwrap();
-        Self {
-            swapchain_image,    
-            swapchain_image_view,
-            swapchain_image_index,
-            framebuffer: None,
-            draw_command_buffer: None,
-        }
-    }
-
-    pub fn init_framebuffer(&mut self, render_pass: Arc<RenderPass>) -> () {
-        let view = ImageView::new_default(self.swapchain_image.clone()).unwrap();
+    pub fn new(swapchain_image: Arc<Image>, render_pass: Arc<RenderPass>) -> Self {
+        let swapchain_image_view = ImageView::new_default(swapchain_image).unwrap();
         let framebuffer = Framebuffer::new(
             render_pass,
             FramebufferCreateInfo {
-                attachments: vec![view],
+                attachments: vec![swapchain_image_view.clone()],
                 ..Default::default()
-            })
-            .unwrap();
-        self.framebuffer = Some(framebuffer);
+            },
+        )
+        .unwrap();
+        Self {
+            swapchain_image_view,
+            framebuffer,
+        }
     }
 }

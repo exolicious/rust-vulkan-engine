@@ -1,22 +1,57 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
-use vulkano::{command_buffer::{CommandBufferExecFuture, SecondaryAutoCommandBuffer}, device::{physical::{PhysicalDevice, PhysicalDeviceType}, Device, DeviceCreateInfo, 
-DeviceExtensions, Queue, QueueCreateInfo, QueueFlags}, image::{Image, ImageUsage}, instance::Instance, ordered_passes_renderpass, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, 
-    ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{RenderPass, Subpass}, shader::ShaderModule, single_pass_renderpass, swapchain::{PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{future::{FenceSignalFuture, JoinFuture}, GpuFuture}, Validated, ValidationError, VulkanError};
-use winit::{event_loop::{EventLoop}, window::{Window, WindowBuilder}};
+use glam::Mat4;
+use vulkano::command_buffer::{
+    AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage,
+    PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer, SubpassBeginInfo,
+    SubpassContents, SubpassEndInfo,
+};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
+use vulkano::format::Format;
+use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
+use vulkano::device::{
+    Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+};
+use vulkano::image::{Image, ImageUsage};
+use vulkano::ordered_passes_renderpass;
+use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
+use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
+use vulkano::pipeline::graphics::multisample::MultisampleState;
+use vulkano::pipeline::graphics::rasterization::RasterizationState;
+use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
+use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
+use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+use vulkano::pipeline::{
+    GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo,
+};
+use vulkano::render_pass::{RenderPass, Subpass};
+use vulkano::shader::ShaderModule;
+use vulkano::swapchain::{
+    self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+    SwapchainPresentInfo,
+};
+use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
+use vulkano::sync::{self, GpuFuture};
+use vulkano::{Validated, VulkanError};
+use winit::event_loop::EventLoop;
+use winit::window::{Window, WindowBuilder};
 
-use crate::{engine::scene::Scene, initialize::vulkan_instancing::get_vulkan_instance, physics::physics_traits::Transform};
+use crate::engine::scene::Scene;
+use crate::initialize::vulkan_instancing::get_vulkan_instance;
+use crate::physics::physics_traits::Transform;
 
-use super::{buffer_manager::BufferManager, primitives::{self, Mesh}, rendering_traits::{Visibility}, shaders::Shaders};
-
-pub enum EntityUpdateInfo {
-    HasMoved(HasMovedInfo),
-    ChangedVisibility(Visibility)
-}
+use super::buffer_manager::BufferManager;
+use super::primitives::{self, Mesh};
+use super::shaders::Shaders;
 
 pub struct HasMovedInfo {
     pub entity_id: usize,
-    pub new_transform: Transform
+    pub new_transform: Transform,
+}
+
+pub enum EntityUpdateInfo {
+    HasMoved(HasMovedInfo),
 }
 
 pub enum EngineEvent {
@@ -25,77 +60,90 @@ pub enum EngineEvent {
     ChangedActiveScene(Arc<Scene>),
 }
 
+type FrameFence = FenceSignalFuture<
+    PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>,
+>;
+
 pub struct Renderer {
-    vulkan_instance: Arc<Instance>,
-    window: Arc<Window>, 
+    window: Arc<Window>,
     pub surface: Arc<Surface>,
-    physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     queue_family_index: u32,
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
     vertex_shader: Arc<ShaderModule>,
     fragment_shader: Arc<ShaderModule>,
-    pub buffer_manager: BufferManager,
-    active_scene: Arc<Scene>,
-    pub currenty_not_displayed_swapchain_image_index: usize,
     pub render_pass: Arc<RenderPass>,
-    pub graphics_pipeline: Arc<GraphicsPipeline>
+    pub graphics_pipeline: Arc<GraphicsPipeline>,
+    pub buffer_manager: BufferManager,
+    active_scene: Option<Arc<Scene>>,
+    fences: Vec<Option<Arc<FrameFence>>>,
+    previous_fence_index: usize,
+    swapchain_outdated: bool,
 }
 
-
 impl Renderer {
-    pub fn new(event_loop: & EventLoop<()>) -> Renderer {
+    pub fn new(event_loop: &EventLoop<()>) -> Renderer {
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
 
         let vulkan_instance = get_vulkan_instance(event_loop);
-        let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
+        let window = Arc::new(WindowBuilder::new().build(event_loop).unwrap());
         let surface = Surface::from_window(vulkan_instance.clone(), window.clone()).unwrap();
-        let (physical_device, queue_family_index) = Renderer::build_physical_device_and_queue_family_index(vulkan_instance.clone(), surface.clone(), &device_extensions);
-        let (queue, device) = Renderer::build_device_and_queues(physical_device.clone(), queue_family_index, device_extensions);
-        let (swapchain, swapchain_images) = Renderer::build_swapchain_and_swapchain_images(physical_device.clone(), surface.clone(), window.clone(), device.clone());
-        let render_pass = Renderer::build_render_pass(device.clone(), swapchain.clone());
-        let (vertex_shader, fragment_shader) = Renderer::build_shaders(device.clone());
-        let graphics_pipeline = Renderer::build_pipeline(vertex_shader.clone(), fragment_shader.clone(), device.clone(), render_pass.clone(), None);
-        let buffer_manager = BufferManager::new(device.clone(), graphics_pipeline.clone(), swapchain_images, render_pass.clone(), queue_family_index);
-        let active_scene = Arc::new(Scene::new());
-        let currenty_not_displayed_swapchain_image_index = 0;
+        let (physical_device, queue_family_index) =
+            Self::pick_physical_device(vulkan_instance, surface.clone(), &device_extensions);
+        let (queue, device) =
+            Self::build_device_and_queue(physical_device.clone(), queue_family_index, device_extensions);
+        let (swapchain, swapchain_images) =
+            Self::build_swapchain(physical_device, surface.clone(), window.clone(), device.clone());
+        let render_pass = Self::build_render_pass(device.clone(), swapchain.clone());
+        let shaders = Shaders::load(device.clone()).unwrap();
+        let window_size = window.inner_size();
+        let graphics_pipeline = Self::build_pipeline(
+            shaders.vertex_shader.clone(),
+            shaders.fragment_shader.clone(),
+            device.clone(),
+            render_pass.clone(),
+            [window_size.width as f32, window_size.height as f32],
+        );
+        let buffer_manager =
+            BufferManager::new(device.clone(), swapchain_images.clone(), render_pass.clone());
+        let fences = vec![None; swapchain_images.len()];
 
         Renderer {
-            vulkan_instance,
             window,
-            physical_device,
+            surface,
+            device,
             queue_family_index,
             queue,
-            device,
-            surface,
             swapchain,
-            buffer_manager,
-            vertex_shader,
-            fragment_shader,
+            vertex_shader: shaders.vertex_shader,
+            fragment_shader: shaders.fragment_shader,
             render_pass,
             graphics_pipeline,
-            active_scene,
-            currenty_not_displayed_swapchain_image_index
+            buffer_manager,
+            active_scene: None,
+            fences,
+            previous_fence_index: 0,
+            swapchain_outdated: false,
         }
-
     }
 
-    pub fn build_physical_device_and_queue_family_index(instance: Arc<Instance>, surface: Arc<Surface>, device_extensions: &DeviceExtensions) -> (Arc<PhysicalDevice>, u32) {
-        let (physical_device, queue_family_index) = instance
+    fn pick_physical_device(
+        instance: Arc<vulkano::instance::Instance>,
+        surface: Arc<Surface>,
+        device_extensions: &DeviceExtensions,
+    ) -> (Arc<PhysicalDevice>, u32) {
+        instance
             .enumerate_physical_devices()
             .expect("failed to enumerate physical devices")
-            .filter(|p| p.supported_extensions().contains(&device_extensions))
+            .filter(|p| p.supported_extensions().contains(device_extensions))
             .filter_map(|p| {
                 p.queue_family_properties()
                     .iter()
                     .enumerate()
-                    // Find the first first queue family that is suitable.
-                    // If none is found, `None` is returned to `filter_map`,
-                    // which disqualifies this physical device.
                     .position(|(i, q)| {
                         q.queue_flags.contains(QueueFlags::GRAPHICS)
                             && p.surface_support(i as u32, &surface).unwrap_or(false)
@@ -107,22 +155,19 @@ impl Renderer {
                 PhysicalDeviceType::IntegratedGpu => 1,
                 PhysicalDeviceType::VirtualGpu => 2,
                 PhysicalDeviceType::Cpu => 3,
-        
-                // Note that there exists `PhysicalDeviceType::Other`, however,
-                // `PhysicalDeviceType` is a non-exhaustive enum. Thus, one should
-                // match wildcard `_` to catch all unknown device types.
                 _ => 4,
             })
-            .expect("no device available");
-
-        (physical_device, queue_family_index)
+            .expect("no suitable physical device available")
     }
 
-    pub fn build_device_and_queues(physical_device: Arc<PhysicalDevice>, queue_family_index: u32, device_extensions: DeviceExtensions,) -> (Arc<Queue>, Arc<Device>) {
+    fn build_device_and_queue(
+        physical_device: Arc<PhysicalDevice>,
+        queue_family_index: u32,
+        device_extensions: DeviceExtensions,
+    ) -> (Arc<Queue>, Arc<Device>) {
         let (device, mut queues) = Device::new(
-            physical_device.clone(),
+            physical_device,
             DeviceCreateInfo {
-                // here we pass the desired queue family to use by index
                 queue_create_infos: vec![QueueCreateInfo {
                     queue_family_index,
                     ..Default::default()
@@ -132,89 +177,90 @@ impl Renderer {
             },
         )
         .expect("failed to create device");
-        let queue: Arc<Queue> = queues.next().unwrap();
-        (queue, device)
+        (queues.next().unwrap(), device)
     }
 
-    pub fn build_swapchain_and_swapchain_images(physical_device: Arc<PhysicalDevice>, surface: Arc<Surface>, window: Arc<Window>, device: Arc<Device>) -> (Arc<Swapchain>, Vec<Arc<Image>>) {
+    fn build_swapchain(
+        physical_device: Arc<PhysicalDevice>,
+        surface: Arc<Surface>,
+        window: Arc<Window>,
+        device: Arc<Device>,
+    ) -> (Arc<Swapchain>, Vec<Arc<Image>>) {
         let caps = physical_device
             .surface_capabilities(&surface, Default::default())
             .expect("failed to get surface capabilities");
-    
-        let dimensions = window.inner_size();
         let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-        let image_format = physical_device.surface_formats(&surface, Default::default()).unwrap()[0].0;
+        // egui blends in linear space and expects a UNORM render target, so
+        // prefer one over the sRGB formats most drivers list first.
+        let surface_formats = physical_device
+            .surface_formats(&surface, Default::default())
+            .unwrap();
+        let image_format = surface_formats
+            .iter()
+            .map(|(format, _)| *format)
+            .find(|format| matches!(format, Format::B8G8R8A8_UNORM | Format::R8G8B8A8_UNORM))
+            .unwrap_or(surface_formats[0].0);
 
-        let (swapchain, swapchain_images) = Swapchain::new(
-            device.clone(),
-            surface.clone(),
+        Swapchain::new(
+            device,
+            surface,
             SwapchainCreateInfo {
                 min_image_count: caps.min_image_count + 1,
                 image_format,
-                image_extent: dimensions.into(),
+                image_extent: window.inner_size().into(),
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
                 composite_alpha,
                 ..Default::default()
             },
         )
-        .unwrap();
-    
-        (swapchain, swapchain_images)
+        .unwrap()
     }
 
-    pub fn build_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
-        let render_pass = ordered_passes_renderpass!(
-            device.clone(),
+    fn build_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
+        // Subpass 0 draws the scene, subpass 1 draws the egui overlay on top.
+        ordered_passes_renderpass!(
+            device,
             attachments: {
-                // `foo` is a custom name we give to the first and only attachment.
                 color: {
-                    format: swapchain.image_format(),  // set the format the same as the swapchain
+                    format: swapchain.image_format(),
                     samples: 1,
                     load_op: Clear,
                     store_op: Store,
                 },
             },
             passes: [
-                    { color: [color], depth_stencil: {}, input: [] },
-                    { color: [color], depth_stencil: {}, input: [] },
-                ],
+                { color: [color], depth_stencil: {}, input: [] },
+                { color: [color], depth_stencil: {}, input: [] },
+            ],
         )
-        .unwrap();
-
-        render_pass
-    }
-    
-    pub fn build_shaders(device: Arc<Device>) -> (Arc<ShaderModule>, Arc<ShaderModule>) {
-        let shaders = Shaders::load(device.clone()).unwrap();
-
-        (shaders.vertex_shader, shaders.fragment_shader)
+        .unwrap()
     }
 
-    pub fn build_pipeline(vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>, device: Arc<Device>, render_pass: Arc<RenderPass>, viewport: Option<Viewport>) -> Arc<GraphicsPipeline> {
-        let viewport = match viewport {
-            Some(viewport) => viewport,
-            None => {
-                Viewport {
-                    offset: [0.0, 0.0],
-                    extent: [1024.0, 1024.0],
-                    depth_range: 0.0..=1.0,
-                }
-            }
+    fn build_pipeline(
+        vertex_shader: Arc<ShaderModule>,
+        fragment_shader: Arc<ShaderModule>,
+        device: Arc<Device>,
+        render_pass: Arc<RenderPass>,
+        viewport_extent: [f32; 2],
+    ) -> Arc<GraphicsPipeline> {
+        let viewport = Viewport {
+            offset: [0.0, 0.0],
+            extent: viewport_extent,
+            depth_range: 0.0..=1.0,
         };
-        // A Vulkan shader can in theory contain multiple entry points, so we have to specify
-        // which one.
+
         let vs = vertex_shader.entry_point("main").unwrap();
         let fs = fragment_shader.entry_point("main").unwrap();
-    
+
         let vertex_input_state = <primitives::Vertex as Vertex>::per_vertex()
             .definition(&vs.info().input_interface)
             .unwrap();
-    
+
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
             PipelineShaderStageCreateInfo::new(fs),
         ];
-    
+
         let layout = PipelineLayout::new(
             device.clone(),
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
@@ -222,141 +268,279 @@ impl Renderer {
                 .unwrap(),
         )
         .unwrap();
-    
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
-    
-        let pipeline = GraphicsPipeline::new(
-            device.clone(),
+
+        let subpass = Subpass::from(render_pass, 0).unwrap();
+
+        GraphicsPipeline::new(
+            device,
             None,
             GraphicsPipelineCreateInfo {
-                // The stages of our pipeline, we have vertex and fragment stages.
                 stages: stages.into_iter().collect(),
-                // Describes the layout of the vertex input and how should it behave.
                 vertex_input_state: Some(vertex_input_state),
-                // Indicate the type of the primitives (the default is a list of triangles).
                 input_assembly_state: Some(InputAssemblyState::default()),
-                // Set the fixed viewport.
                 viewport_state: Some(ViewportState {
                     viewports: [viewport].into_iter().collect(),
                     ..Default::default()
                 }),
-                // Ignore these for now.
                 rasterization_state: Some(RasterizationState::default()),
                 multisample_state: Some(MultisampleState::default()),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
                     ColorBlendAttachmentState::default(),
                 )),
-                // This graphics pipeline object concerns the first pass of the render pass.
                 subpass: Some(subpass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)
             },
         )
-        .unwrap();
-        
-        pipeline
+        .unwrap()
     }
 
-    pub fn get_future(& mut self, previous_future: Box<dyn GpuFuture>, acquire_future: SwapchainAcquireFuture, acquired_swapchain_index: usize, gui_command_buffer: Arc<SecondaryAutoCommandBuffer>) -> Result<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>, Validated<VulkanError>>  {
-        //let after_future = gui.draw_on_image(previous_future, self.frames[acquired_swapchain_index].swapchain_image_view.clone());
-        //println!("acquired_swapchain_index: {}", acquired_swapchain_index);
-        let command_buffer = self.buffer_manager.build_command_buffer(acquired_swapchain_index, gui_command_buffer);
-        previous_future
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
+    pub fn swapchain_extent(&self) -> [u32; 2] {
+        self.swapchain.image_extent()
+    }
+
+    pub fn mark_swapchain_outdated(&mut self) {
+        self.swapchain_outdated = true;
+    }
+
+    /// Acquires the next swapchain image and waits for the previous frame that
+    /// used it, so its per-image buffers are safe to write. Returns None when
+    /// no image can be acquired this frame (swapchain outdated, minimized).
+    pub fn begin_frame(&mut self) -> Option<(u32, SwapchainAcquireFuture)> {
+        if self.swapchain_outdated && !self.recreate_swapchain() {
+            return None;
+        }
+
+        let (image_index, suboptimal, acquire_future) =
+            match swapchain::acquire_next_image(self.swapchain.clone(), None)
+                .map_err(Validated::unwrap)
+            {
+                Ok(result) => result,
+                Err(VulkanError::OutOfDate) => {
+                    self.swapchain_outdated = true;
+                    return None;
+                }
+                Err(e) => panic!("failed to acquire next swapchain image: {e}"),
+            };
+        if suboptimal {
+            self.swapchain_outdated = true;
+        }
+
+        if let Some(fence) = &self.fences[image_index as usize] {
+            fence.wait(None).unwrap();
+        }
+
+        Some((image_index, acquire_future))
+    }
+
+    pub fn end_frame(
+        &mut self,
+        image_index: u32,
+        acquire_future: SwapchainAcquireFuture,
+        gui_command_buffer: Arc<SecondaryAutoCommandBuffer>,
+    ) {
+        // The vertex buffer is shared by all frames in flight; only write to it
+        // once every in-flight frame has finished.
+        if self.buffer_manager.has_pending_vertex_uploads() {
+            self.wait_for_all_fences();
+        }
+
+        let view_projection = self
+            .active_scene
+            .as_ref()
+            .map(|scene| scene.camera.projection_view_matrix)
+            .unwrap_or(Mat4::IDENTITY);
+        if let Err(e) = self
+            .buffer_manager
+            .upload_frame_data(image_index as usize, view_projection)
+        {
+            eprintln!("failed to upload frame data: {e}");
+        }
+
+        let command_buffer = self.build_command_buffer(image_index as usize, gui_command_buffer);
+
+        let previous_future = match self.fences[self.previous_fence_index].clone() {
+            Some(fence) => fence.boxed(),
+            None => {
+                let mut now = sync::now(self.device.clone());
+                now.cleanup_finished();
+                now.boxed()
+            }
+        };
+
+        let future = previous_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 self.queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), acquired_swapchain_index.try_into().unwrap())
+                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_index),
             )
-            .then_signal_fence_and_flush()
-    }
+            .then_signal_fence_and_flush();
 
-    pub fn entities_updated_handler(&mut self, updated_entities_infos: Vec<EntityUpdateInfo>) -> ()  {
-        println!("Got into entitited updated handler");
-        for (i, entity_update_info) in updated_entities_infos.iter().enumerate() {
-            match entity_update_info {
-                EntityUpdateInfo::HasMoved(has_moved_info) => {
-                    let mut entity_model_matrices = Vec::new();
-                    let mut last_index = 0;
-                    if has_moved_info.entity_id - last_index > 1 { 
-                        self.buffer_manager.copy_transform_data_slice_to_buffer(0, entity_model_matrices.len(), &entity_model_matrices, self.currenty_not_displayed_swapchain_image_index);
-                        entity_model_matrices.clear();
-                    }
-                    entity_model_matrices.push(has_moved_info.new_transform.model_matrix());
-                    last_index = has_moved_info.entity_id;
-                    
-                },
-                EntityUpdateInfo::ChangedVisibility(changed_visibility_info) => todo!(),
+        self.fences[image_index as usize] = match future.map_err(Validated::unwrap) {
+            Ok(fence) => Some(Arc::new(fence)),
+            Err(VulkanError::OutOfDate) => {
+                self.swapchain_outdated = true;
+                None
             }
-        }
-    }
-
-    //todo: make it so that when multiple entities get added in one frame, they will get collected and not as many events get fired
-    pub fn entity_added_handler(&mut self, entity_transform: Transform, entity_mesh: Mesh, entity_index: usize, swapchain_image_index: usize) -> ()  {
-        println!("Entity added");
-        match self.buffer_manager.register_entity(entity_transform, entity_mesh, swapchain_image_index, entity_index) {
-            Ok(()) => {
-                println!("Successfully handled EntityAdded event");
+            Err(e) => {
+                eprintln!("failed to flush frame: {e}");
+                None
             }
-            Err(err) => println!("something went wrong while handling the EntityAdded Event"),
-        }
-    }
-
-    pub fn changed_active_scene_handler(&mut self, active_scene: Arc<Scene>) -> ()  {
-        println!("Active scene changed in frame index: {}", self.currenty_not_displayed_swapchain_image_index);
-        match self.buffer_manager.copy_vp_camera_data(&active_scene.camera, self.currenty_not_displayed_swapchain_image_index) {
-            Ok(()) => {
-                println!("Successfully handled Changed Active Scene event");
-            }
-            Err(err) => println!("something went wrong while handling the EntityAdded Event"),
-        }
-
-        //here the buffer_manager would have to do way more after setting the camera matrix, we would have to overwrite the whole state basically.
-        //maybe an idea would be to have 1 buffer manager for each scene
-    }
-
-    //pub fn recreate_swapchain(&mut self) {
-    //    let new_dimensions = self.window.inner_size();
-    //    let (new_swapchain, new_images) = self.swapchain
-    //        .recreate(SwapchainCreateInfo {
-    //            // Here, `image_extend` will correspond to the window dimensions.
-    //            image_extent: new_dimensions.into(),
-    //            ..self.swapchain.create_info()
-    //        })
-    //        .expect("failed to recreate swapchain: {e}");
-    //   
-    //    // since framebuffers are dependant on swapchain (images) we need to recreate them aswell
-    //    let frames = Renderer::build_frames(self.device.clone(), self.pipeline.clone(), new_images.clone(), 
-    //                                                    self.render_pass.clone(), self.queue_family_index, self.buffer_manager);
-//
-    //    self.swapchain = new_swapchain;
-    //    self.swapchain_images = new_images;
-    //    self.frames = frames;
-    //}
-
-    pub fn recreate_pipeline(&mut self) {
-        let new_dimensions = self.window.inner_size();
-        let mut viewport = Viewport {
-            offset: [0.0, 0.0],
-            extent: [1024.0, 1024.0],
-            depth_range: 0.0..=1.0,
         };
-
-        viewport.extent = new_dimensions.into();
+        self.previous_fence_index = image_index as usize;
     }
 
-    //fn synch_buffers_handler(&mut self, most_up_to_date_buffer_index: usize, entity: Arc<dyn RenderableEntity>) -> () {
-    //    if most_up_to_date_buffer_index == self.currenty_not_displayed_swapchain_image_index { //if this is equal, synching needs to be done
-    //        self.receive_event(EventResolveTiming::Immediate(RendererEvent::BuffersSynched));
-    //        return;
-    //    } 
-    //    println!("Attempting Vertex and transform buffer sync for frame index: {}", self.currenty_not_displayed_swapchain_image_index);
-    //    match self.buffer_manager.unwrap().sync_mesh_and_transform_buffers(self.currenty_not_displayed_swapchain_image_index) {
-    //        Ok(()) => {
-    //            self.receive_event(EventResolveTiming::NextImage(RendererEvent::SynchBuffers(entity, most_up_to_date_buffer_index)));
-    //        }
-    //        Err(err) => println!("something went wrong while handling the SynchBuffers Event"),
-    //    }
-    //}
+    fn build_command_buffer(
+        &self,
+        image_index: usize,
+        gui_command_buffer: Arc<SecondaryAutoCommandBuffer>,
+    ) -> Arc<PrimaryAutoCommandBuffer> {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &self.buffer_manager.command_buffer_allocator,
+            self.queue_family_index,
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
+
+        let layouts = self.graphics_pipeline.layout().set_layouts();
+        let vp_descriptor_set = PersistentDescriptorSet::new(
+            &self.buffer_manager.descriptor_set_allocator,
+            layouts[0].clone(),
+            [WriteDescriptorSet::buffer(
+                0,
+                self.buffer_manager.vp_buffer(image_index),
+            )],
+            [],
+        )
+        .unwrap();
+        let transform_descriptor_set = PersistentDescriptorSet::new(
+            &self.buffer_manager.descriptor_set_allocator,
+            layouts[1].clone(),
+            [WriteDescriptorSet::buffer(
+                0,
+                self.buffer_manager.transform_buffers.buffer(image_index),
+            )],
+            [],
+        )
+        .unwrap();
+
+        builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                    ..RenderPassBeginInfo::framebuffer(
+                        self.buffer_manager.frames[image_index].framebuffer.clone(),
+                    )
+                },
+                SubpassBeginInfo::default(),
+            )
+            .unwrap()
+            .bind_pipeline_graphics(self.graphics_pipeline.clone())
+            .unwrap()
+            .bind_vertex_buffers(0, self.buffer_manager.vertex_buffer.buffer.clone())
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                self.graphics_pipeline.layout().clone(),
+                0,
+                vec![vp_descriptor_set, transform_descriptor_set],
+            )
+            .unwrap();
+
+        // In Vulkan gl_InstanceIndex starts at first_instance, so each mesh
+        // group indexes its own contiguous slice of the transform buffer.
+        let mut first_instance = 0;
+        for group in &self.buffer_manager.vertex_buffer.mesh_accessor.groups {
+            let instance_count = group.entity_indices.len() as u32;
+            builder
+                .draw(
+                    group.mesh.data.len() as u32,
+                    instance_count,
+                    group.first_vertex as u32,
+                    first_instance,
+                )
+                .unwrap();
+            first_instance += instance_count;
+        }
+
+        builder
+            .next_subpass(
+                SubpassEndInfo::default(),
+                SubpassBeginInfo {
+                    contents: SubpassContents::SecondaryCommandBuffers,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .execute_commands(gui_command_buffer)
+            .unwrap()
+            .end_render_pass(SubpassEndInfo::default())
+            .unwrap();
+
+        builder.build().unwrap()
+    }
+
+    fn recreate_swapchain(&mut self) -> bool {
+        let dimensions = self.window.inner_size();
+        if dimensions.width == 0 || dimensions.height == 0 {
+            return false;
+        }
+
+        self.wait_for_all_fences();
+
+        let (new_swapchain, new_images) = self
+            .swapchain
+            .recreate(SwapchainCreateInfo {
+                image_extent: dimensions.into(),
+                ..self.swapchain.create_info()
+            })
+            .expect("failed to recreate swapchain");
+
+        self.swapchain = new_swapchain;
+        self.fences = vec![None; new_images.len()];
+        self.previous_fence_index = 0;
+        self.buffer_manager
+            .rebuild_frames(new_images, self.render_pass.clone());
+        self.graphics_pipeline = Self::build_pipeline(
+            self.vertex_shader.clone(),
+            self.fragment_shader.clone(),
+            self.device.clone(),
+            self.render_pass.clone(),
+            [dimensions.width as f32, dimensions.height as f32],
+        );
+        self.swapchain_outdated = false;
+        true
+    }
+
+    fn wait_for_all_fences(&self) {
+        for fence in self.fences.iter().flatten() {
+            fence.wait(None).unwrap();
+        }
+    }
+
+    pub fn entity_added_handler(&mut self, transform: Transform, mesh: Mesh, entity_index: usize) {
+        if let Err(e) = self.buffer_manager.register_entity(transform, mesh, entity_index) {
+            eprintln!("failed to register entity {entity_index}: {e}");
+        }
+    }
+
+    pub fn entities_updated_handler(&mut self, updates: Vec<EntityUpdateInfo>) {
+        for update in updates {
+            match update {
+                EntityUpdateInfo::HasMoved(info) => self
+                    .buffer_manager
+                    .set_entity_transform(info.entity_id, &info.new_transform),
+            }
+        }
+    }
+
+    pub fn changed_active_scene_handler(&mut self, scene: Arc<Scene>) {
+        self.active_scene = Some(scene);
+    }
 }

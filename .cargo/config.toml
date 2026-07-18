@@ -1,0 +1,15 @@
+[env]
+# WSLg: force the X11 (XWayland) backend.
+#
+# On the Wayland backend, the app dies the moment the window gains keyboard
+# focus and WSLg pushes a clipboard offer at it (wl_data_device.selection).
+# The compositor hangs up, the socket returns EPIPE, and winit 0.28's Wayland
+# loop turns that into a bare `std::process::exit(32)` with nothing on stderr.
+# Symptom: window flashes, closes after ~2 frames, no error. Intermittent,
+# because it only fires if the window actually gets focused.
+#
+# X11 is stable here (thousands of frames, no issue). Requires x11-dl >= 2.21;
+# 2.20.0 has UB that rustc's null-pointer debug assertion now traps at startup.
+#
+# Ignored on platforms where winit has no Unix backend choice (e.g. Windows).
+WINIT_UNIX_BACKEND = "x11"

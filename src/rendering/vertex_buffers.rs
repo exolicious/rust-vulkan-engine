@@ -1,74 +1,80 @@
-use std::{collections::HashMap, error::Error, ops::Index, sync::Arc};
+use std::error::Error;
+use std::sync::Arc;
 
-use egui_winit_vulkano::egui::epaint;
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
-use super::{mesh_accessor::{MeshAccessor, MeshAccessorAddEntityResult}, primitives::{Mesh, Vertex}};
+use super::mesh_accessor::{AddEntityResult, MeshAccessor};
+use super::primitives::{Mesh, Vertex};
+
+const VERTEX_BUFFER_CAPACITY: usize = 1 << 16;
 
 pub struct VertexBuffer {
-    pub vertex_buffer: Subbuffer<[Vertex]>,
+    pub buffer: Subbuffer<[Vertex]>,
     pub mesh_accessor: MeshAccessor,
-    pub newly_added_mesh_first_and_last_vertex_index: Option<(usize, usize)>
+    pending_uploads: Vec<(usize, Vec<Vertex>)>,
 }
-const INITIAL_VERTEX_BUFFER_SIZE: usize = 2_i32.pow(16) as usize; 
 
 impl VertexBuffer {
     pub fn new(memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
-        let initializer_data = vec![Vertex{position: [0.,0.,0.]}; INITIAL_VERTEX_BUFFER_SIZE];
-        let vertex_buffer = Buffer::from_iter(
-            memory_allocator.clone(),
+        let buffer = Buffer::from_iter(
+            memory_allocator,
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            initializer_data.into_iter()
+            vec![Vertex::default(); VERTEX_BUFFER_CAPACITY],
         )
         .unwrap();
- 
-        let mesh_accessor = MeshAccessor::default();
 
         Self {
-            vertex_buffer,
-            mesh_accessor,
-            newly_added_mesh_first_and_last_vertex_index: None
+            buffer,
+            mesh_accessor: MeshAccessor::default(),
+            pending_uploads: Vec::new(),
         }
     }
 
-    pub fn bind_entity_mesh(&mut self, entity_mesh: Mesh, next_swapchain_image_index: usize) -> Result<(), Box<dyn Error>> {
-        let first_index = self.mesh_accessor.get_last_vertex_index();
-
-        let entity_add_result: MeshAccessorAddEntityResult = self.mesh_accessor.add_entity(entity_mesh);
-        match entity_add_result {
-            MeshAccessorAddEntityResult::AppendedToExistingMesh => {},
-            MeshAccessorAddEntityResult::CreatedNewMesh(mesh) => {
-                self.copy_blueprint_mesh_data_to_vertex_buffer(first_index, &mesh.data)?;
-                self.newly_added_mesh_first_and_last_vertex_index = Some((first_index, self.mesh_accessor.get_last_vertex_index()));
+    pub fn register_mesh_instance(
+        &mut self,
+        mesh: Mesh,
+        entity_index: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        let vertex_count = mesh.data.len();
+        if let AddEntityResult::CreatedNewMesh { first_vertex } =
+            self.mesh_accessor.add_entity(mesh, entity_index)
+        {
+            if first_vertex + vertex_count > VERTEX_BUFFER_CAPACITY {
+                return Err(format!(
+                    "vertex buffer capacity ({VERTEX_BUFFER_CAPACITY}) exceeded"
+                )
+                .into());
             }
+            let data = self.mesh_accessor.groups.last().unwrap().mesh.data.clone();
+            self.pending_uploads.push((first_vertex, data));
         }
         Ok(())
     }
 
-    fn copy_blueprint_mesh_data_to_vertex_buffer(& self, first_index: usize, mesh_data: &Vec<Vertex>) -> Result<(), Box<dyn Error>> {
-        println!("Copying new mesh data to vertex buffer");
-        println!("first vertex buffer index for mesh: {}", first_index);
-        println!("last vertex buffer index for mesh: {}", mesh_data.iter().len());
-        let mut write_lock = self.vertex_buffer.write()?;
-        write_lock[first_index..mesh_data.iter().len()].copy_from_slice(mesh_data.as_slice());
-        //println!("Successfully copied mesh data: {:?} to vertex buffer with index: {}", mesh_data.as_slice(), next_swapchain_image_index);
-        Ok(())
+    pub fn has_pending_uploads(&self) -> bool {
+        !self.pending_uploads.is_empty()
     }
 
-    //pub fn get_synch_info(&self, unsynched_ahead_buffer_index: usize) -> (Subbuffer<[Vertex]>, Vec<Subbuffer<[Vertex]>>) {
-    //    let most_up_to_date_buffer = &self.vertex_buffers[unsynched_ahead_buffer_index];
-    //    let mut buffers_to_update = Vec::new();
-    //    for (i, transform_buffer) in self.vertex_buffers.iter().enumerate() {
-    //        buffers_to_update.push(transform_buffer.clone());
-    //    }
-    //    return (most_up_to_date_buffer.clone(), buffers_to_update)
-    //}
-    
+    /// Writes newly registered mesh data into the vertex buffer. The buffer is
+    /// shared by all frames in flight, so the caller must make sure the GPU is
+    /// not reading it (wait on all frame fences) before flushing.
+    pub fn flush_pending_uploads(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.pending_uploads.is_empty() {
+            return Ok(());
+        }
+        let mut write_lock = self.buffer.write()?;
+        for (first_vertex, data) in self.pending_uploads.drain(..) {
+            write_lock[first_vertex..first_vertex + data.len()].copy_from_slice(&data);
+        }
+        Ok(())
+    }
 }

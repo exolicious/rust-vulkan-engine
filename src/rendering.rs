@@ -1,11 +1,8 @@
-pub mod renderer;
-pub mod window_manager;
-pub mod shaders;
-pub mod primitives;
-pub mod rendering_traits;
-pub mod frame;
 pub mod buffer_manager;
-pub mod entities;
-pub mod vertex_buffers;
+pub mod frame;
 pub mod mesh_accessor;
+pub mod primitives;
+pub mod renderer;
+pub mod shaders;
 pub mod transform_buffers;
+pub mod vertex_buffers;

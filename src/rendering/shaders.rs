@@ -10,16 +10,16 @@ mod vertex_shader {
 
             layout(location = 0) in vec3 position;
 
-            layout(set = 0, binding = 0) uniform UniformBufferObject {
-                mat4 u_projection_view_matrix;
-            } ubo;
+            layout(set = 0, binding = 0) uniform ViewProjection {
+                mat4 view_projection;
+            };
 
-            layout(set = 1, binding = 0) uniform TransformBufferObject {
-                mat4 u_transform_matrix[1000000000];
-            } tbo;
-            
+            layout(set = 1, binding = 0) readonly buffer ModelMatrices {
+                mat4 model[];
+            };
+
             void main() {
-                gl_Position = ubo.u_projection_view_matrix * tbo.u_transform_matrix[gl_InstanceIndex] * vec4(position, 1.0);
+                gl_Position = view_projection * model[gl_InstanceIndex] * vec4(position, 1.0);
             }",
     }
 }
@@ -29,7 +29,9 @@ mod fragment_shader {
         ty: "fragment",
         src: "
             #version 450
+
             layout(location = 0) out vec4 f_color;
+
             void main() {
                 f_color = vec4(1.0, 0.0, 0.0, 1.0);
             }"
@@ -45,7 +47,7 @@ impl Shaders {
     pub fn load(device: Arc<Device>) -> Result<Self, Validated<VulkanError>> {
         Ok(Self {
             vertex_shader: vertex_shader::load(device.clone())?,
-            fragment_shader: fragment_shader::load(device.clone())?
+            fragment_shader: fragment_shader::load(device)?,
         })
     }
 }

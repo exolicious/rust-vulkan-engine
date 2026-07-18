@@ -1,16 +1,12 @@
-use std::{error::Error, sync::Arc};
-
-use crate::{physics::physics_traits::Transform, rendering::{buffer_manager::BufferManager, rendering_traits::Visibility}};
+use crate::physics::physics_traits::Transform;
+use crate::rendering::primitives::Mesh;
 
 pub enum TickAction {
     HasMoved(Transform),
-    ChangedVisibility(Visibility)
 }
 
 pub trait Entity {
     fn tick(&mut self) -> Option<TickAction>;
-}
-
-pub trait RegisterToBuffer {
-    fn register(& self, f: fn(&BufferManager, entity: Arc<dyn Entity>, next_swapchain_image_index: usize, ) -> Result<(), Box<dyn Error>>) -> ();
+    fn transform(&self) -> Transform;
+    fn mesh(&self) -> Mesh;
 }
