@@ -84,18 +84,18 @@ a single uniform/storage buffer, writing the next frame's data would race
 against the GPU reading the previous frame's.
 
 The scheme used here: N copies of every per-frame buffer (transforms,
-view-projection), indexed by swapchain image index, plus one fence per image
-(`Renderer::fences`). Before touching image i's buffers, `begin_frame` waits
-on fence i, at which point the GPU is guaranteed to be done with everything
-that frame submitted. `end_frame` chains the previous frame's future into the
-new submission
+view-projection), indexed by swapchain image index, plus one fence-backed
+frame future per image (`Renderer::frame_futures`). Before touching image i's
+buffers, `begin_frame` waits on frame future i, at which point the GPU is
+guaranteed to be done with everything that frame submitted. `end_frame` chains
+the previous frame's future into the new submission
 (`previous_future.join(acquire_future)...then_signal_fence_and_flush`) and
-stores the result in `fences[i]`.
+stores the result in `frame_futures[i]`.
 
 The one exception is the vertex buffer, which is shared across all images
 (mesh data is static, so N copies would buy nothing). It is only written when
-a new mesh type first appears, and in that case `end_frame` waits on all
-fences first, accepting a full pipeline stall for a rare event.
+a new mesh type first appears, and in that case `end_frame` waits for all
+in-flight frames first, accepting a full pipeline stall for a rare event.
 
 ## Per-frame data upload
 

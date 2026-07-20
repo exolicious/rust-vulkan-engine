@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use glam::Mat4;
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage,
-    PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer, SubpassBeginInfo,
-    SubpassContents, SubpassEndInfo,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+    SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
 };
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::format::Format;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
@@ -23,15 +21,14 @@ use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
 use vulkano::pipeline::{
-    GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo,
+    DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+    PipelineShaderStageCreateInfo,
 };
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
-    self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-    SwapchainPresentInfo,
+    self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo,
 };
-use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
 use vulkano::sync::{self, GpuFuture};
 use vulkano::{Validated, VulkanError};
 use winit::event_loop::EventLoop;
@@ -42,6 +39,7 @@ use crate::initialize::vulkan_instancing::get_vulkan_instance;
 use crate::physics::physics_traits::Transform;
 
 use super::buffer_manager::BufferManager;
+use super::frame::{Frame, FrameInFlight, MAX_FRAMES_IN_FLIGHT};
 use super::primitives::{self, Mesh};
 use super::shaders::Shaders;
 
@@ -60,10 +58,6 @@ pub enum EngineEvent {
     ChangedActiveScene(Arc<Scene>),
 }
 
-type FrameFence = FenceSignalFuture<
-    PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>,
->;
-
 pub struct Renderer {
     window: Arc<Window>,
     pub surface: Arc<Surface>,
@@ -71,14 +65,15 @@ pub struct Renderer {
     queue_family_index: u32,
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
-    vertex_shader: Arc<ShaderModule>,
-    fragment_shader: Arc<ShaderModule>,
     pub render_pass: Arc<RenderPass>,
     pub graphics_pipeline: Arc<GraphicsPipeline>,
     pub buffer_manager: BufferManager,
     active_scene: Option<Arc<Scene>>,
-    fences: Vec<Option<Arc<FrameFence>>>,
-    previous_fence_index: usize,
+    /// Per-swapchain-image resources, rebuilt whenever the swapchain is.
+    swapchain_frames: Vec<Frame>,
+    /// Per-frame-in-flight resources; fixed size, independent of the swapchain.
+    frames_in_flight: Vec<FrameInFlight>,
+    current_frame: usize,
     swapchain_outdated: bool,
 }
 
@@ -100,17 +95,26 @@ impl Renderer {
             Self::build_swapchain(physical_device, surface.clone(), window.clone(), device.clone());
         let render_pass = Self::build_render_pass(device.clone(), swapchain.clone());
         let shaders = Shaders::load(device.clone()).unwrap();
-        let window_size = window.inner_size();
         let graphics_pipeline = Self::build_pipeline(
-            shaders.vertex_shader.clone(),
-            shaders.fragment_shader.clone(),
+            shaders.vertex_shader,
+            shaders.fragment_shader,
             device.clone(),
             render_pass.clone(),
-            [window_size.width as f32, window_size.height as f32],
         );
-        let buffer_manager =
-            BufferManager::new(device.clone(), swapchain_images.clone(), render_pass.clone());
-        let fences = vec![None; swapchain_images.len()];
+        let buffer_manager = BufferManager::new(device.clone());
+
+        let set_layouts = graphics_pipeline.layout().set_layouts();
+        let frames_in_flight = (0..MAX_FRAMES_IN_FLIGHT)
+            .map(|_| {
+                FrameInFlight::new(
+                    buffer_manager.memory_allocator.clone(),
+                    &buffer_manager.descriptor_set_allocator,
+                    set_layouts[0].clone(),
+                    set_layouts[1].clone(),
+                )
+            })
+            .collect();
+        let swapchain_frames = Self::build_swapchain_frames(swapchain_images, render_pass.clone());
 
         Renderer {
             window,
@@ -119,16 +123,25 @@ impl Renderer {
             queue_family_index,
             queue,
             swapchain,
-            vertex_shader: shaders.vertex_shader,
-            fragment_shader: shaders.fragment_shader,
             render_pass,
             graphics_pipeline,
             buffer_manager,
             active_scene: None,
-            fences,
-            previous_fence_index: 0,
+            swapchain_frames,
+            frames_in_flight,
+            current_frame: 0,
             swapchain_outdated: false,
         }
+    }
+
+    fn build_swapchain_frames(
+        swapchain_images: Vec<Arc<Image>>,
+        render_pass: Arc<RenderPass>,
+    ) -> Vec<Frame> {
+        swapchain_images
+            .into_iter()
+            .map(|image| Frame::new(image, render_pass.clone()))
+            .collect()
     }
 
     fn pick_physical_device(
@@ -241,14 +254,7 @@ impl Renderer {
         fragment_shader: Arc<ShaderModule>,
         device: Arc<Device>,
         render_pass: Arc<RenderPass>,
-        viewport_extent: [f32; 2],
     ) -> Arc<GraphicsPipeline> {
-        let viewport = Viewport {
-            offset: [0.0, 0.0],
-            extent: viewport_extent,
-            depth_range: 0.0..=1.0,
-        };
-
         let vs = vertex_shader.entry_point("main").unwrap();
         let fs = fragment_shader.entry_point("main").unwrap();
 
@@ -278,10 +284,10 @@ impl Renderer {
                 stages: stages.into_iter().collect(),
                 vertex_input_state: Some(vertex_input_state),
                 input_assembly_state: Some(InputAssemblyState::default()),
-                viewport_state: Some(ViewportState {
-                    viewports: [viewport].into_iter().collect(),
-                    ..Default::default()
-                }),
+                // The viewport is dynamic state, so the pipeline survives
+                // swapchain recreation unchanged.
+                viewport_state: Some(ViewportState::default()),
+                dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                 rasterization_state: Some(RasterizationState::default()),
                 multisample_state: Some(MultisampleState::default()),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
@@ -307,12 +313,17 @@ impl Renderer {
         self.swapchain_outdated = true;
     }
 
-    /// Acquires the next swapchain image and waits for the previous frame that
-    /// used it, so its per-image buffers are safe to write. Returns None when
-    /// no image can be acquired this frame (swapchain outdated, minimized).
+    /// Waits for the frame that last used the current frame-in-flight slot, so
+    /// its buffers are safe to write, then acquires the next swapchain image.
+    /// Returns None when no image can be acquired this frame (swapchain
+    /// outdated, minimized).
     pub fn begin_frame(&mut self) -> Option<(u32, SwapchainAcquireFuture)> {
         if self.swapchain_outdated && !self.recreate_swapchain() {
             return None;
+        }
+
+        if let Some(fence) = &self.frames_in_flight[self.current_frame].fence {
+            fence.wait(None).unwrap();
         }
 
         let (image_index, suboptimal, acquire_future) =
@@ -330,10 +341,6 @@ impl Renderer {
             self.swapchain_outdated = true;
         }
 
-        if let Some(fence) = &self.fences[image_index as usize] {
-            fence.wait(None).unwrap();
-        }
-
         Some((image_index, acquire_future))
     }
 
@@ -346,7 +353,7 @@ impl Renderer {
         // The vertex buffer is shared by all frames in flight; only write to it
         // once every in-flight frame has finished.
         if self.buffer_manager.has_pending_vertex_uploads() {
-            self.wait_for_all_fences();
+            self.wait_for_all_frames();
         }
 
         let view_projection = self
@@ -356,14 +363,15 @@ impl Renderer {
             .unwrap_or(Mat4::IDENTITY);
         if let Err(e) = self
             .buffer_manager
-            .upload_frame_data(image_index as usize, view_projection)
+            .upload_frame_data(&self.frames_in_flight[self.current_frame], view_projection)
         {
             eprintln!("failed to upload frame data: {e}");
         }
 
         let command_buffer = self.build_command_buffer(image_index as usize, gui_command_buffer);
 
-        let previous_future = match self.fences[self.previous_fence_index].clone() {
+        let previous_frame = (self.current_frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+        let previous_future = match self.frames_in_flight[previous_frame].fence.clone() {
             Some(fence) => fence.boxed(),
             None => {
                 let mut now = sync::now(self.device.clone());
@@ -382,7 +390,7 @@ impl Renderer {
             )
             .then_signal_fence_and_flush();
 
-        self.fences[image_index as usize] = match future.map_err(Validated::unwrap) {
+        self.frames_in_flight[self.current_frame].fence = match future.map_err(Validated::unwrap) {
             Ok(fence) => Some(Arc::new(fence)),
             Err(VulkanError::OutOfDate) => {
                 self.swapchain_outdated = true;
@@ -393,7 +401,7 @@ impl Renderer {
                 None
             }
         };
-        self.previous_fence_index = image_index as usize;
+        self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     fn build_command_buffer(
@@ -408,34 +416,20 @@ impl Renderer {
         )
         .unwrap();
 
-        let layouts = self.graphics_pipeline.layout().set_layouts();
-        let vp_descriptor_set = PersistentDescriptorSet::new(
-            &self.buffer_manager.descriptor_set_allocator,
-            layouts[0].clone(),
-            [WriteDescriptorSet::buffer(
-                0,
-                self.buffer_manager.vp_buffer(image_index),
-            )],
-            [],
-        )
-        .unwrap();
-        let transform_descriptor_set = PersistentDescriptorSet::new(
-            &self.buffer_manager.descriptor_set_allocator,
-            layouts[1].clone(),
-            [WriteDescriptorSet::buffer(
-                0,
-                self.buffer_manager.transform_buffers.buffer(image_index),
-            )],
-            [],
-        )
-        .unwrap();
+        let frame = &self.frames_in_flight[self.current_frame];
+        let extent = self.swapchain.image_extent();
+        let viewport = Viewport {
+            offset: [0.0, 0.0],
+            extent: [extent[0] as f32, extent[1] as f32],
+            depth_range: 0.0..=1.0,
+        };
 
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
                     clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
                     ..RenderPassBeginInfo::framebuffer(
-                        self.buffer_manager.frames[image_index].framebuffer.clone(),
+                        self.swapchain_frames[image_index].framebuffer.clone(),
                     )
                 },
                 SubpassBeginInfo::default(),
@@ -443,13 +437,18 @@ impl Renderer {
             .unwrap()
             .bind_pipeline_graphics(self.graphics_pipeline.clone())
             .unwrap()
+            .set_viewport(0, [viewport].into_iter().collect())
+            .unwrap()
             .bind_vertex_buffers(0, self.buffer_manager.vertex_buffer.buffer.clone())
             .unwrap()
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 self.graphics_pipeline.layout().clone(),
                 0,
-                vec![vp_descriptor_set, transform_descriptor_set],
+                vec![
+                    frame.vp_descriptor_set.clone(),
+                    frame.transform_descriptor_set.clone(),
+                ],
             )
             .unwrap();
 
@@ -492,7 +491,7 @@ impl Renderer {
             return false;
         }
 
-        self.wait_for_all_fences();
+        self.wait_for_all_frames();
 
         let (new_swapchain, new_images) = self
             .swapchain
@@ -503,23 +502,19 @@ impl Renderer {
             .expect("failed to recreate swapchain");
 
         self.swapchain = new_swapchain;
-        self.fences = vec![None; new_images.len()];
-        self.previous_fence_index = 0;
-        self.buffer_manager
-            .rebuild_frames(new_images, self.render_pass.clone());
-        self.graphics_pipeline = Self::build_pipeline(
-            self.vertex_shader.clone(),
-            self.fragment_shader.clone(),
-            self.device.clone(),
-            self.render_pass.clone(),
-            [dimensions.width as f32, dimensions.height as f32],
-        );
+        self.swapchain_frames = Self::build_swapchain_frames(new_images, self.render_pass.clone());
+        // All frames have finished; dropping the fences releases their
+        // references to the old swapchain.
+        for frame in &mut self.frames_in_flight {
+            frame.fence = None;
+        }
+        self.current_frame = 0;
         self.swapchain_outdated = false;
         true
     }
 
-    fn wait_for_all_fences(&self) {
-        for fence in self.fences.iter().flatten() {
+    fn wait_for_all_frames(&self) {
+        for fence in self.frames_in_flight.iter().filter_map(|frame| frame.fence.as_ref()) {
             fence.wait(None).unwrap();
         }
     }

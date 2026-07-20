@@ -18,6 +18,10 @@ pub enum AddEntityResult {
 }
 
 impl MeshAccessor {
+    pub fn contains_mesh(&self, name: &str) -> bool {
+        self.groups.iter().any(|group| group.mesh.name == name)
+    }
+
     pub fn add_entity(&mut self, mesh: Mesh, entity_index: usize) -> AddEntityResult {
         if let Some(group) = self.groups.iter_mut().find(|group| group.mesh.name == mesh.name) {
             group.entity_indices.push(entity_index);

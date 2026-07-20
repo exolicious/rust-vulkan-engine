@@ -44,16 +44,19 @@ impl VertexBuffer {
         mesh: Mesh,
         entity_index: usize,
     ) -> Result<(), Box<dyn Error>> {
-        let vertex_count = mesh.data.len();
+        // Check capacity before touching the accessor, so a failed
+        // registration leaves no half-registered mesh group behind.
+        let is_new_mesh = !self.mesh_accessor.contains_mesh(&mesh.name);
+        if is_new_mesh && self.mesh_accessor.vertex_count() + mesh.data.len() > VERTEX_BUFFER_CAPACITY
+        {
+            return Err(format!(
+                "vertex buffer capacity ({VERTEX_BUFFER_CAPACITY}) exceeded"
+            )
+            .into());
+        }
         if let AddEntityResult::CreatedNewMesh { first_vertex } =
             self.mesh_accessor.add_entity(mesh, entity_index)
         {
-            if first_vertex + vertex_count > VERTEX_BUFFER_CAPACITY {
-                return Err(format!(
-                    "vertex buffer capacity ({VERTEX_BUFFER_CAPACITY}) exceeded"
-                )
-                .into());
-            }
             let data = self.mesh_accessor.groups.last().unwrap().mesh.data.clone();
             self.pending_uploads.push((first_vertex, data));
         }
@@ -66,7 +69,7 @@ impl VertexBuffer {
 
     /// Writes newly registered mesh data into the vertex buffer. The buffer is
     /// shared by all frames in flight, so the caller must make sure the GPU is
-    /// not reading it (wait on all frame fences) before flushing.
+    /// not reading it (wait for all in-flight frame futures) before flushing.
     pub fn flush_pending_uploads(&mut self) -> Result<(), Box<dyn Error>> {
         if self.pending_uploads.is_empty() {
             return Ok(());

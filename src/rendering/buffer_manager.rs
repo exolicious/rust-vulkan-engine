@@ -2,7 +2,6 @@ use std::error::Error;
 use std::sync::Arc;
 
 use glam::Mat4;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
@@ -10,15 +9,13 @@ use vulkano::descriptor_set::allocator::{
     StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo,
 };
 use vulkano::device::Device;
-use vulkano::image::Image;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
-use vulkano::render_pass::RenderPass;
+use vulkano::memory::allocator::StandardMemoryAllocator;
 
 use crate::physics::physics_traits::Transform;
 
-use super::frame::Frame;
+use super::frame::FrameInFlight;
 use super::primitives::Mesh;
-use super::transform_buffers::TransformBuffers;
+use super::transforms::Transforms;
 use super::vertex_buffers::VertexBuffer;
 
 pub struct BufferManager {
@@ -26,17 +23,11 @@ pub struct BufferManager {
     pub command_buffer_allocator: StandardCommandBufferAllocator,
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub vertex_buffer: VertexBuffer,
-    pub transform_buffers: TransformBuffers,
-    vp_buffers: Vec<Subbuffer<[[f32; 4]; 4]>>,
-    pub frames: Vec<Frame>,
+    transforms: Transforms,
 }
 
 impl BufferManager {
-    pub fn new(
-        device: Arc<Device>,
-        swapchain_images: Vec<Arc<Image>>,
-        render_pass: Arc<RenderPass>,
-    ) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             device.clone(),
             StandardDescriptorSetAllocatorCreateInfo::default(),
@@ -49,68 +40,15 @@ impl BufferManager {
             },
         );
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device));
-
-        let image_count = swapchain_images.len();
         let vertex_buffer = VertexBuffer::new(memory_allocator.clone());
-        let transform_buffers = TransformBuffers::new(memory_allocator.clone(), image_count);
-        let vp_buffers = Self::build_vp_buffers(&memory_allocator, image_count);
-        let frames = Self::build_frames(swapchain_images, render_pass);
 
         Self {
             descriptor_set_allocator,
             command_buffer_allocator,
             memory_allocator,
             vertex_buffer,
-            transform_buffers,
-            vp_buffers,
-            frames,
+            transforms: Transforms::new(),
         }
-    }
-
-    fn build_frames(swapchain_images: Vec<Arc<Image>>, render_pass: Arc<RenderPass>) -> Vec<Frame> {
-        swapchain_images
-            .into_iter()
-            .map(|image| Frame::new(image, render_pass.clone()))
-            .collect()
-    }
-
-    fn build_vp_buffers(
-        memory_allocator: &Arc<StandardMemoryAllocator>,
-        count: usize,
-    ) -> Vec<Subbuffer<[[f32; 4]; 4]>> {
-        (0..count)
-            .map(|_| {
-                Buffer::from_data(
-                    memory_allocator.clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::UNIFORM_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    Mat4::IDENTITY.to_cols_array_2d(),
-                )
-                .unwrap()
-            })
-            .collect()
-    }
-
-    /// Called after the swapchain was recreated: rebuilds the framebuffers and,
-    /// if the image count changed, the per-image buffers.
-    pub fn rebuild_frames(
-        &mut self,
-        swapchain_images: Vec<Arc<Image>>,
-        render_pass: Arc<RenderPass>,
-    ) {
-        let image_count = swapchain_images.len();
-        if image_count != self.vp_buffers.len() {
-            self.vp_buffers = Self::build_vp_buffers(&self.memory_allocator, image_count);
-            self.transform_buffers.set_image_count(image_count);
-        }
-        self.frames = Self::build_frames(swapchain_images, render_pass);
     }
 
     pub fn register_entity(
@@ -119,12 +57,17 @@ impl BufferManager {
         mesh: Mesh,
         entity_index: usize,
     ) -> Result<(), Box<dyn Error>> {
+        // Both capacity checks happen before either structure is mutated, so a
+        // failed registration cannot leave the mesh groups and the transforms
+        // disagreeing about which entities exist.
+        self.transforms.check_capacity()?;
         self.vertex_buffer.register_mesh_instance(mesh, entity_index)?;
-        self.transform_buffers.push(transform.model_matrix())
+        self.transforms.push(transform.model_matrix());
+        Ok(())
     }
 
     pub fn set_entity_transform(&mut self, entity_index: usize, transform: &Transform) {
-        self.transform_buffers.set(entity_index, transform.model_matrix());
+        self.transforms.set(entity_index, transform.model_matrix());
     }
 
     pub fn has_pending_vertex_uploads(&self) -> bool {
@@ -133,17 +76,15 @@ impl BufferManager {
 
     pub fn upload_frame_data(
         &mut self,
-        image_index: usize,
+        frame: &FrameInFlight,
         view_projection: Mat4,
     ) -> Result<(), Box<dyn Error>> {
         self.vertex_buffer.flush_pending_uploads()?;
-        self.transform_buffers
-            .upload(image_index, self.vertex_buffer.mesh_accessor.instance_order())?;
-        *self.vp_buffers[image_index].write()? = view_projection.to_cols_array_2d();
+        self.transforms.write_into(
+            &frame.transform_buffer,
+            self.vertex_buffer.mesh_accessor.instance_order(),
+        )?;
+        *frame.vp_buffer.write()? = view_projection.to_cols_array_2d();
         Ok(())
-    }
-
-    pub fn vp_buffer(&self, image_index: usize) -> Subbuffer<[[f32; 4]; 4]> {
-        self.vp_buffers[image_index].clone()
     }
 }
