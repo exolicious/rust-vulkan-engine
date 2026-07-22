@@ -1,5 +1,6 @@
 pub mod buffer_manager;
 pub mod frame;
+pub mod gui;
 pub mod mesh_accessor;
 pub mod primitives;
 pub mod renderer;

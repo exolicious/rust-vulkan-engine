@@ -1,19 +1,56 @@
 use std::sync::Arc;
+use std::time::Instant;
 
-use egui_winit_vulkano::{egui, Gui, GuiConfig};
+use egui_winit_vulkano::egui;
 use glam::Vec3;
-use vulkano::render_pass::Subpass;
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use engine::engine::Engine;
 use engine::scene::Scene;
+use rendering::gui::GuiOverlay;
 use rendering::renderer::Renderer;
 
 pub mod engine;
 pub mod initialize;
 pub mod physics;
 pub mod rendering;
+
+/// Tracks the time between frames, exponentially smoothed so the displayed
+/// numbers are stable enough to read.
+struct FrameTimer {
+    last_frame: Instant,
+    smoothed_frame_time: f32,
+}
+
+impl FrameTimer {
+    const SMOOTHING: f32 = 0.05;
+
+    fn new() -> Self {
+        Self {
+            last_frame: Instant::now(),
+            smoothed_frame_time: 0.0,
+        }
+    }
+
+    /// Call once per frame; returns (frame time in ms, fps).
+    fn tick(&mut self) -> (f32, f32) {
+        let now = Instant::now();
+        let frame_time = now.duration_since(self.last_frame).as_secs_f32();
+        self.last_frame = now;
+        self.smoothed_frame_time = if self.smoothed_frame_time == 0.0 {
+            frame_time
+        } else {
+            self.smoothed_frame_time + (frame_time - self.smoothed_frame_time) * Self::SMOOTHING
+        };
+        let fps = if self.smoothed_frame_time > 0.0 {
+            1.0 / self.smoothed_frame_time
+        } else {
+            0.0
+        };
+        (self.smoothed_frame_time * 1000.0, fps)
+    }
+}
 
 fn main() {
     let event_loop = EventLoop::new();
@@ -23,29 +60,14 @@ fn main() {
 
     engine.set_active_scene(Arc::new(Scene::new()));
     engine.add_cube_to_scene(Some(Vec3::new(1., 1., 2.)));
+    
 
-    let gui_subpass = Subpass::from(renderer.render_pass.clone(), 1).unwrap();
-    let mut gui = Gui::new_with_subpass(
-        &event_loop,
-        renderer.surface.clone(),
-        renderer.queue.clone(),
-        gui_subpass,
-        renderer.swapchain.image_format(),
-        GuiConfig {
-            allow_srgb_render_target: true,
-            ..GuiConfig::default()
-        },
-    );
-
-    let gui_context = gui.context();
-    let mut gui_style = (*gui_context.style()).clone();
-    gui_style.visuals.window_shadow = egui::epaint::Shadow::NONE;
-    gui_style.visuals.popup_shadow = egui::epaint::Shadow::NONE;
-    gui_context.set_style(gui_style);
+    let mut gui = GuiOverlay::new(&event_loop, &renderer);
+    let mut frame_timer = FrameTimer::new();
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent { event, .. } => {
-            let gui_consumed = gui.update(&event);
+            let gui_consumed = gui.handle_event(&event);
             match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(_) => renderer.mark_swapchain_outdated(),
@@ -59,12 +81,14 @@ fn main() {
                     ..
                 } if !gui_consumed => {
                     engine.add_cube_to_scene(None);
+                    engine.add_multiple_cubes_to_scene(2000);
                 }
                 _ => {}
             }
         }
         Event::MainEventsCleared => renderer.window().request_redraw(),
         Event::RedrawRequested(_) => {
+            let (frame_time_ms, fps) = frame_timer.tick();
             engine.tick();
 
             let Some((image_index, acquire_future)) = renderer.begin_frame() else {
@@ -73,14 +97,14 @@ fn main() {
 
             engine.work_off_event_queue(&mut renderer);
 
-            gui.immediate_ui(|gui| {
-                let ctx = gui.context();
-                egui::Window::new("Engine").show(&ctx, |ui| {
+            let gui_command_buffer = gui.draw(renderer.swapchain_extent(), |ctx| {
+                egui::Window::new("Engine").show(ctx, |ui| {
+                    ui.label(format!("frame time: {frame_time_ms:.2} ms"));
+                    ui.label(format!("fps: {fps:.0}"));
                     ui.label(format!("entities: {}", engine.entity_count()));
                     ui.label("space: spawn cubes");
                 });
             });
-            let gui_command_buffer = gui.draw_on_subpass_image(renderer.swapchain_extent());
 
             renderer.end_frame(image_index, acquire_future, gui_command_buffer);
         }

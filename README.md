@@ -6,8 +6,9 @@ model at the same time, and it has grown into a working renderer with a real
 architecture: instanced drawing, correct frames-in-flight synchronization, and
 an egui overlay composited in the same render pass.
 
-Run it with `cargo run`. Space spawns cubes, which drift around with a random
-walk. An egui window shows the live entity count.
+Run it with `cargo run`. Space spawns a batch of cubes, which drift around
+with a random walk. An egui window shows the live entity count, frame time,
+and FPS.
 
 Demo of runtime addition of moving entities:
 
@@ -59,57 +60,67 @@ these steps in order:
 1. `engine.tick()`: every entity gets `tick()`, movers report
    `TickAction::HasMoved`, and the engine batches all of them into a single
    `EntitiesUpdated` event.
-2. `renderer.begin_frame()`: acquires the next swapchain image and waits on
-   that image's fence (see the synchronization section). Returns `None` when
-   the swapchain is stale or the window is minimized, in which case the frame
-   is simply skipped.
+2. `renderer.begin_frame()`: waits on the current frame-in-flight's fence
+   (see the synchronization section), then acquires the next swapchain image.
+   Returns `None` when the swapchain is stale or the window is minimized, in
+   which case the frame is simply skipped.
 3. `engine.work_off_event_queue(&mut renderer)`: drains the event queue.
-4. egui: `gui.immediate_ui(...)` builds the UI, `gui.draw_on_subpass_image`
-   returns a secondary command buffer for subpass 1.
+4. egui: `gui.draw(extent, |ctx| ...)` builds the UI and returns a secondary
+   command buffer for subpass 1 (`GuiOverlay` wraps the egui integration).
 5. `renderer.end_frame(...)`: uploads frame data, records the primary command
-   buffer, submits, presents, and stores the new fence.
+   buffer, submits, presents, stores the new fence in the current
+   frame-in-flight slot, and advances to the next slot.
 
 Resizing is handled lazily. The `Resized` event only sets a flag
 (`mark_swapchain_outdated`); the actual recreation happens at the top of the
 next `begin_frame`. Suboptimal or OutOfDate results from acquire/present set
-the same flag. Recreation rebuilds the swapchain, framebuffers, per-image
-buffers (if the image count changed), and the pipeline, since the viewport is
-baked into it.
+the same flag. Recreation waits for all in-flight frames, rebuilds the
+swapchain and the per-image framebuffers, and drops the old fences. The
+pipeline survives unchanged because the viewport is dynamic state.
 
-## Frames in flight and per-image buffers
+## Frames in flight
 
-The swapchain has N images (usually 3). While image A is being scanned out,
-the CPU is already recording commands that read GPU buffers for image B. With
+While the GPU renders one frame, the CPU is already recording the next. With
 a single uniform/storage buffer, writing the next frame's data would race
 against the GPU reading the previous frame's.
 
-The scheme used here: N copies of every per-frame buffer (transforms,
-view-projection), indexed by swapchain image index, plus one fence-backed
-frame future per image (`Renderer::frame_futures`). Before touching image i's
-buffers, `begin_frame` waits on frame future i, at which point the GPU is
-guaranteed to be done with everything that frame submitted. `end_frame` chains
-the previous frame's future into the new submission
-(`previous_future.join(acquire_future)...then_signal_fence_and_flush`) and
-stores the result in `frame_futures[i]`.
+The scheme used here (`src/rendering/frame.rs`): `MAX_FRAMES_IN_FLIGHT` (2)
+`FrameInFlight` bundles, each holding everything the CPU writes per frame —
+the transform storage buffer, the view-projection uniform buffer, their
+descriptor sets, and the fence-backed future of the frame that last used the
+bundle. The renderer cycles through them round-robin (`current_frame`),
+independent of which swapchain image gets acquired: the swapchain image count
+is the presentation engine's business, and the only truly per-image resources
+are the image view and framebuffer (`Frame`). An earlier version indexed the
+per-frame buffers by swapchain image index, which conflates two unrelated
+counts and buys an extra buffer copy for nothing when the swapchain has three
+or more images.
 
-The one exception is the vertex buffer, which is shared across all images
-(mesh data is static, so N copies would buy nothing). It is only written when
-a new mesh type first appears, and in that case `end_frame` waits for all
-in-flight frames first, accepting a full pipeline stall for a rare event.
+Before touching bundle i's buffers, `begin_frame` waits on bundle i's fence,
+at which point the GPU is guaranteed to be done with the frame that last
+wrote them. `end_frame` chains the previous frame's future into the new
+submission
+(`previous_future.join(acquire_future)...then_signal_fence_and_flush`),
+stores the result as bundle i's fence, and advances `current_frame`.
+
+The one exception is the vertex buffer, which is shared across all frames in
+flight (mesh data is static, so copies would buy nothing). It is only written
+when a new mesh type first appears, and in that case `end_frame` waits for
+all in-flight frames first, accepting a full pipeline stall for a rare event.
 
 ## Per-frame data upload
 
 There is no delta or cross-buffer sync machinery. The renderer keeps one
-CPU-side authoritative array of model matrices
-(`TransformBuffers::model_matrices`, indexed by entity) and writes all of them
-into the acquired image's storage buffer every frame. The camera works the
-same way: the active scene's projection-view matrix is written into that
-image's uniform buffer each frame. At realistic entity counts for this project
-the cost is negligible; dirty tracking can be added if profiling ever says so.
+CPU-side authoritative array of model matrices (`Transforms`, indexed by
+entity) and writes all of them into the current frame-in-flight's storage
+buffer every frame. The camera works the same way: the active scene's
+projection-view matrix is written into that bundle's uniform buffer each
+frame. At realistic entity counts for this project the cost is negligible;
+dirty tracking can be added if profiling ever says so.
 
-An earlier version wrote deltas into one image's buffer and then GPU-copied
-the changes to the other images' buffers. It was clever and it was broken.
-Full re-upload is simpler and correct, which is the right trade at this scale.
+An earlier version wrote deltas into one buffer copy and then GPU-copied the
+changes to the others. It was clever and it was broken. Full re-upload is
+simpler and correct, which is the right trade at this scale.
 
 ## Instanced drawing
 
@@ -132,7 +143,7 @@ draw(vertex_count, instance_count, first_vertex, first_instance)
 with `first_instance` accumulating across groups. The key Vulkan detail:
 `gl_InstanceIndex` in the shader starts at `first_instance`, unlike OpenGL's
 `gl_InstanceID`. Each group therefore indexes its own contiguous slice of the
-transform storage buffer, which is why `TransformBuffers::upload` writes
+transform storage buffer, which is why `Transforms::write_into` writes
 matrices in `MeshAccessor::instance_order()` (grouped by mesh) rather than in
 entity-index order. If the upload order and the draw order ever disagree,
 entities render with each other's transforms. That invariant lives in exactly
@@ -162,19 +173,24 @@ from it, nothing else:
   `pending_uploads` list. New mesh data is not written immediately on
   registration (the GPU might be reading the buffer); it is queued and flushed
   in `end_frame` after the all-fences wait described above.
-- `TransformBuffers`: N storage buffers plus the CPU matrix array
-- `vp_buffers`: N one-matrix uniform buffers
-- `frames`: one `Frame` (image view + framebuffer) per swapchain image
+- `Transforms`: the CPU-side authoritative matrix array
 
-`upload_frame_data(image_index, vp)` is the single "everything the GPU needs
-for this frame" write: flush pending vertices, upload transforms, write the
-view-projection matrix.
+The GPU-side per-frame buffers (transforms, view-projection) live in the
+`FrameInFlight` bundles, and the per-image `Frame` structs (image view +
+framebuffer) sit next to them — both owned by the renderer, not by
+BufferManager.
+
+`upload_frame_data(frame_in_flight, vp)` is the single "everything the GPU
+needs for this frame" write: flush pending vertices, write the transforms
+into the bundle's storage buffer, write the view-projection matrix into its
+uniform buffer.
 
 Command buffer recording lives in `Renderer`, not here. BufferManager hands
 out buffers; it does not decide what to do with them.
 
 Capacities are fixed and checked with a readable error instead of a slice
-panic: 65536 vertices, 4096 instances. Growing a buffer at runtime would mean
+panic: 65536 vertices, `TRANSFORM_BUFFER_CAPACITY` (currently a million-ish,
+sized for stress testing) instances. Growing a buffer at runtime would mean
 allocating a bigger one, waiting on all fences, and rebinding. Not built, not
 yet needed.
 
@@ -187,8 +203,10 @@ One render pass, two subpasses (`ordered_passes_renderpass!` in renderer.rs):
   buffer (`SubpassContents::SecondaryCommandBuffers`)
 
 The UI is composited in the same pass: no extra image, no extra
-synchronization. `Gui::new_with_subpass` receives subpass 1 and the swapchain
-format.
+synchronization. The egui integration is wrapped in `GuiOverlay`
+(src/rendering/gui.rs), which hands egui subpass 1 and the swapchain format;
+what the UI shows stays in main.rs, passed to `GuiOverlay::draw` as a
+closure.
 
 Two egui integration details worth knowing:
 
@@ -198,11 +216,11 @@ Two egui integration details worth knowing:
   is set as a fallback so platforms without a UNORM format don't panic, at
   the cost of slightly-off UI colors there.
 - Window and popup shadows are disabled globally via the egui style in
-  main.rs; drop shadows over a 3D viewport look wrong.
+  `GuiOverlay::new`; drop shadows over a 3D viewport look wrong.
 
-Input routing: `gui.update(&event)` returns true when egui consumed the
-event, and the spacebar handler checks that flag so interacting with a panel
-doesn't also spawn cubes.
+Input routing: `GuiOverlay::handle_event` returns true when egui consumed
+the event, and the spacebar handler checks that flag so interacting with a
+panel doesn't also spawn cubes.
 
 ## Coordinates and camera
 
@@ -227,7 +245,8 @@ doesn't also spawn cubes.
 
 ```
 src/
-  main.rs                      event loop, egui setup, frame orchestration
+  main.rs                      event loop, frame timer, UI contents, frame
+                               orchestration
   engine/
     engine.rs                  Engine: entities, event queue, tick
     scene.rs                   Scene: owns the Camera
@@ -237,12 +256,15 @@ src/
     physics_traits.rs          Transform + model_matrix
   rendering/
     renderer.rs                device/swapchain/pipeline setup, begin/end_frame,
-                               fences, command buffer recording, event handlers
-    buffer_manager.rs          owns all GPU buffers + allocators
-    transform_buffers.rs       per-image SSBOs + CPU matrix array
+                               command buffer recording, event handlers
+    buffer_manager.rs          allocators, vertex buffer, CPU transforms
+    transforms.rs              CPU matrix array + per-frame buffer writes
     vertex_buffers.rs          shared vertex buffer + deferred mesh uploads
     mesh_accessor.rs           mesh dedup, instance grouping, draw-call layout
-    frame.rs                   per-swapchain-image view + framebuffer
+    frame.rs                   Frame (per-swapchain-image view + framebuffer),
+                               FrameInFlight (per-frame buffers, descriptor
+                               sets, fence)
+    gui.rs                     GuiOverlay: egui integration behind subpass 1
     shaders.rs                 GLSL, compiled at build time
     primitives.rs              Vertex, Mesh, Cube (corner table + index list)
   initialize/
@@ -263,8 +285,8 @@ that file. Harmless on platforms where winit has no Unix backend choice.
 - Entities have each other's transforms: the `instance_order` /
   `first_instance` invariant from the instancing section is broken.
 - Panic or error on buffer `write()`: something is writing a buffer the GPU
-  is still reading; a fence wait is missing or waits on the wrong image
-  index.
+  is still reading; a fence wait is missing or waits on the wrong
+  frame-in-flight slot.
 - Washed-out or off UI colors: the swapchain picked an sRGB format (see the
   egui section).
 - vulkano's runtime checks catch a lot, but they are not a substitute for the

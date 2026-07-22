@@ -3,7 +3,7 @@ use std::error::Error;
 use glam::Mat4;
 use vulkano::buffer::Subbuffer;
 
-pub const TRANSFORM_BUFFER_CAPACITY: usize = 4096;
+pub const TRANSFORM_BUFFER_CAPACITY: usize = 1000002;
 
 /// CPU-side authoritative model matrices, indexed by entity. Each frame they
 /// are written into the transform buffer of the frame in flight being

@@ -82,6 +82,12 @@ impl Engine {
         self.entities.push(Box::new(cube));
     }
 
+    pub fn add_multiple_cubes_to_scene(&mut self, amount: usize) {
+        for _ in 0..amount {
+            self.add_cube_to_scene(None);
+        }
+    }
+
     pub fn work_off_event_queue(&mut self, renderer: &mut Renderer) {
         while let Some(event) = self.event_queue.pop_front() {
             match event {
