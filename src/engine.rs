@@ -1,4 +1,7 @@
-pub mod engine;
+mod engine;
+
+pub mod camera;
 pub mod general_traits;
 pub mod scene;
-pub mod camera;
+
+pub use self::engine::Engine;

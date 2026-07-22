@@ -1,6 +1,6 @@
 use glam::{Mat4, Vec3};
 
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 
 #[derive(Debug, Clone)]
 pub struct Camera {

@@ -11,7 +11,7 @@ use vulkano::descriptor_set::allocator::{
 use vulkano::device::Device;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 
 use super::frame::FrameInFlight;
 use super::primitives::Mesh;

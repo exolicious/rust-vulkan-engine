@@ -1,4 +1,4 @@
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 use crate::rendering::primitives::Mesh;
 
 pub enum TickAction {

@@ -4,7 +4,7 @@ use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex as VertexMacro;
 
 use crate::engine::general_traits::{Entity, TickAction};
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Debug, BufferContents, VertexMacro)]
@@ -30,7 +30,7 @@ impl Mesh {
 
 #[derive(Debug, Clone)]
 pub struct Cube {
-    pub bounds: Vec3,
+    pub scale: Vec3,
     transform: Transform,
 }
 
@@ -62,8 +62,8 @@ const CUBE_TRIANGLES: [[usize; 3]; 12] = [
 ];
 
 impl Cube {
-    pub fn new(bounds: Vec3, transform: Transform) -> Self {
-        Self { bounds, transform }
+    pub fn new(scale: Vec3, transform: Transform) -> Self {
+        Self { scale, transform }
     }
 }
 
@@ -85,7 +85,7 @@ impl Entity for Cube {
     }
 
     fn mesh(&self) -> Mesh {
-        let half = self.bounds / 2.;
+        let half = self.scale / 2.;
         let data = CUBE_TRIANGLES
             .iter()
             .flat_map(|triangle| {

@@ -36,7 +36,7 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::engine::scene::Scene;
 use crate::initialize::vulkan_instancing::get_vulkan_instance;
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 
 use super::buffer_manager::BufferManager;
 use super::frame::{Frame, FrameInFlight, MAX_FRAMES_IN_FLIGHT};

@@ -6,12 +6,15 @@ use glam::Vec3;
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
-use engine::engine::Engine;
+use engine::Engine;
 use engine::scene::Scene;
 use rendering::gui::GuiOverlay;
 use rendering::renderer::Renderer;
 
+use crate::gui_state::GuiState;
+
 pub mod engine;
+pub mod gui_state;
 pub mod initialize;
 pub mod physics;
 pub mod rendering;
@@ -57,9 +60,10 @@ fn main() {
 
     let mut engine = Engine::new();
     let mut renderer = Renderer::new(&event_loop);
+    let mut gui_state = GuiState::new();
 
     engine.set_active_scene(Arc::new(Scene::new()));
-    engine.add_cube_to_scene(Some(Vec3::new(1., 1., 2.)));
+    //engine.add_cube_to_scene(Some(Vec3::new(1., 1., 2.)), None);
     
 
     let mut gui = GuiOverlay::new(&event_loop, &renderer);
@@ -80,7 +84,7 @@ fn main() {
                         },
                     ..
                 } if !gui_consumed => {
-                    engine.add_cube_to_scene(None);
+                    engine.add_cube_to_scene(None, None);
                     engine.add_multiple_cubes_to_scene(2000);
                 }
                 _ => {}
@@ -98,12 +102,7 @@ fn main() {
             engine.work_off_event_queue(&mut renderer);
 
             let gui_command_buffer = gui.draw(renderer.swapchain_extent(), |ctx| {
-                egui::Window::new("Engine").show(ctx, |ui| {
-                    ui.label(format!("frame time: {frame_time_ms:.2} ms"));
-                    ui.label(format!("fps: {fps:.0}"));
-                    ui.label(format!("entities: {}", engine.entity_count()));
-                    ui.label("space: spawn cubes");
-                });
+                gui_state.build_ui(ctx, &mut engine, frame_time_ms, fps);
             });
 
             renderer.end_frame(image_index, acquire_future, gui_command_buffer);

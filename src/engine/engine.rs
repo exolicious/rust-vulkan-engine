@@ -4,7 +4,7 @@ use std::sync::Arc;
 use glam::Vec3;
 use rand::Rng;
 
-use crate::physics::physics_traits::Transform;
+use crate::physics::Transform;
 use crate::rendering::primitives::Cube;
 use crate::rendering::renderer::{EngineEvent, EntityUpdateInfo, HasMovedInfo, Renderer};
 
@@ -57,7 +57,7 @@ impl Engine {
         }
     }
 
-    pub fn add_cube_to_scene(&mut self, translation: Option<Vec3>) {
+    pub fn add_cube_to_scene(&mut self, translation: Option<Vec3>, scale: Option<Vec3>) {
         let translation = translation.unwrap_or_else(|| {
             let mut rng = rand::thread_rng();
             Vec3::new(
@@ -66,8 +66,14 @@ impl Engine {
                 rng.gen_range(-2.0..-0.7),
             )
         });
-        let cube = Cube::new(
-            Vec3::new(0.25, 0.25, 0.25),
+
+        let scale = scale.unwrap_or_else(|| {
+            Vec3::new(1.,1.,1.)
+        });
+
+
+        let cube: Cube = Cube::new(
+            scale,
             Transform {
                 translation,
                 ..Default::default()
@@ -84,7 +90,7 @@ impl Engine {
 
     pub fn add_multiple_cubes_to_scene(&mut self, amount: usize) {
         for _ in 0..amount {
-            self.add_cube_to_scene(None);
+            self.add_cube_to_scene(None, None);
         }
     }
 
