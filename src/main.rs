@@ -1,7 +1,5 @@
-use std::sync::Arc;
 use std::time::Instant;
 
-use egui_winit_vulkano::egui;
 use glam::Vec3;
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};

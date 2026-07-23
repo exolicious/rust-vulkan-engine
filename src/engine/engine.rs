@@ -1,8 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
-use glam::Vec3;
-use rand::Rng;
 
 use crate::physics::Transform;
 use crate::rendering::primitives::Cube;

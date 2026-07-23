@@ -1,8 +1,6 @@
-use std::sync::Arc;
 
-use egui_winit_vulkano::egui::{self, Button, Context, DragValue, Slider, Widget};
+use egui_winit_vulkano::egui::{self, Context, Slider};
 use glam::Vec3;
-use vulkano::command_buffer::SecondaryAutoCommandBuffer;
 
 use crate::{engine::Engine, physics::Transform};
 

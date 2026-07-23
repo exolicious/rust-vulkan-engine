@@ -1,4 +1,3 @@
-use glam::Vec3;
 use rand::Rng;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex as VertexMacro;
