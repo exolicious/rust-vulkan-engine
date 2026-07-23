@@ -30,8 +30,7 @@ impl Mesh {
 
 #[derive(Debug, Clone)]
 pub struct Cube {
-    pub scale: Vec3,
-    transform: Transform,
+    transform: Transform
 }
 
 // Corner indices: bit pattern x, y, z with 0 = negative and 1 = positive half-extent.
@@ -62,19 +61,20 @@ const CUBE_TRIANGLES: [[usize; 3]; 12] = [
 ];
 
 impl Cube {
-    pub fn new(scale: Vec3, transform: Transform) -> Self {
-        Self { scale, transform }
+    pub fn new(transform: Transform) -> Self {
+        Self { transform }
     }
 }
 
 impl Default for Cube {
     fn default() -> Self {
-        Self::new(Vec3::new(0.25, 0.25, 0.25), Transform::default())
+        Self::new(Transform::default())
     }
 }
 
 impl Entity for Cube {
     fn tick(&mut self) -> Option<TickAction> {
+        return None;
         let amount: f32 = rand::thread_rng().gen_range(-0.02..0.02);
         self.transform.translation.x += amount;
         Some(TickAction::HasMoved(self.transform))
@@ -85,14 +85,13 @@ impl Entity for Cube {
     }
 
     fn mesh(&self) -> Mesh {
-        let half = self.scale / 2.;
         let data = CUBE_TRIANGLES
             .iter()
             .flat_map(|triangle| {
                 triangle.iter().map(|&corner| {
                     let [x, y, z] = CUBE_CORNERS[corner];
                     Vertex {
-                        position: [x * half.x, y * half.y, z * half.z],
+                        position: [x, y, z],
                     }
                 })
             })

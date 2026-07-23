@@ -35,6 +35,9 @@ impl GuiState {
                         ui.add(Slider::new(&mut self.z_scale, 1. ..=10.).integer().prefix("Z Scale: "));
 
                         if ui.button("Spawn Cube").clicked() {
+                            println!("X Scale: {}", self.x_scale);
+                            println!("Y Scale: {}", self.y_scale);
+                            println!("Z Scale: {}", self.z_scale);
                             engine.add_cube_to_scene(Some(Vec3::new(0.,0.,0.)), Some(Vec3::new(self.x_scale,  self.y_scale, self.z_scale)));
                         }
                     })

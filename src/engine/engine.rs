@@ -71,11 +71,12 @@ impl Engine {
             Vec3::new(1.,1.,1.)
         });
 
+        println!("Scale of the cube to add {}", scale);
 
         let cube: Cube = Cube::new(
-            scale,
             Transform {
                 translation,
+                scale,
                 ..Default::default()
             },
         );
