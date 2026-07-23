@@ -62,7 +62,7 @@ fn main() {
     let mut renderer = Renderer::new(&event_loop);
     let mut gui_state = GuiState::new();
 
-    engine.set_active_scene(Arc::new(Scene::new()));
+    engine.set_active_scene(Scene::new());
     //engine.add_cube_to_scene(Some(Vec3::new(1., 1., 2.)), None);
     
 
@@ -79,14 +79,29 @@ fn main() {
                     input:
                         KeyboardInput {
                             state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Space),
+                            virtual_keycode: Some(key),
                             ..
                         },
                     ..
-                } if !gui_consumed => {
-                    engine.add_cube_to_scene(None, None);
-                    engine.add_multiple_cubes_to_scene(2000);
-                }
+                } if !gui_consumed => match key {
+                    VirtualKeyCode::Space => {
+                        engine.add_cube_to_scene(None);
+                        engine.add_multiple_cubes_to_scene(2000);
+                    }
+                    VirtualKeyCode::W => {
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: -1. });
+                    }
+                    VirtualKeyCode::A => {
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 1., y: 0., z: 0. });
+                    }
+                    VirtualKeyCode::S => {
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: -1., y: 0., z: 0. });
+                    }
+                    VirtualKeyCode::D => {
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: 1. });
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -105,7 +120,7 @@ fn main() {
                 gui_state.build_ui(ctx, &mut engine, frame_time_ms, fps);
             });
 
-            renderer.end_frame(image_index, acquire_future, gui_command_buffer);
+            renderer.end_frame(image_index, acquire_future, gui_command_buffer, engine.active_scene());
         }
         _ => {}
     });

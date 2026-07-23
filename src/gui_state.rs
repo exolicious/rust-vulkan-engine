@@ -4,7 +4,7 @@ use egui_winit_vulkano::egui::{self, Button, Context, DragValue, Slider, Widget}
 use glam::Vec3;
 use vulkano::command_buffer::SecondaryAutoCommandBuffer;
 
-use crate::engine::Engine;
+use crate::{engine::Engine, physics::Transform};
 
 pub struct GuiState {
     pub x_scale: f32,
@@ -38,7 +38,10 @@ impl GuiState {
                             println!("X Scale: {}", self.x_scale);
                             println!("Y Scale: {}", self.y_scale);
                             println!("Z Scale: {}", self.z_scale);
-                            engine.add_cube_to_scene(Some(Vec3::new(0.,0.,0.)), Some(Vec3::new(self.x_scale,  self.y_scale, self.z_scale)));
+                            engine.add_cube_to_scene(Some(Transform {
+                                scale: Vec3::new(self.x_scale, self.y_scale, self.z_scale),
+                                ..Transform::default()
+                            }))
                         }
                     })
                 })

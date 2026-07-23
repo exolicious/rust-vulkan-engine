@@ -55,7 +55,6 @@ pub enum EntityUpdateInfo {
 pub enum EngineEvent {
     EntityAdded(Transform, Mesh, usize),
     EntitiesUpdated(Vec<EntityUpdateInfo>),
-    ChangedActiveScene(Arc<Scene>),
 }
 
 pub struct Renderer {
@@ -68,7 +67,6 @@ pub struct Renderer {
     pub render_pass: Arc<RenderPass>,
     pub graphics_pipeline: Arc<GraphicsPipeline>,
     pub buffer_manager: BufferManager,
-    active_scene: Option<Arc<Scene>>,
     /// Per-swapchain-image resources, rebuilt whenever the swapchain is.
     swapchain_frames: Vec<Frame>,
     /// Per-frame-in-flight resources; fixed size, independent of the swapchain.
@@ -126,7 +124,6 @@ impl Renderer {
             render_pass,
             graphics_pipeline,
             buffer_manager,
-            active_scene: None,
             swapchain_frames,
             frames_in_flight,
             current_frame: 0,
@@ -349,6 +346,7 @@ impl Renderer {
         image_index: u32,
         acquire_future: SwapchainAcquireFuture,
         gui_command_buffer: Arc<SecondaryAutoCommandBuffer>,
+        scene: Option<&Scene>,
     ) {
         // The vertex buffer is shared by all frames in flight; only write to it
         // once every in-flight frame has finished.
@@ -356,9 +354,7 @@ impl Renderer {
             self.wait_for_all_frames();
         }
 
-        let view_projection = self
-            .active_scene
-            .as_ref()
+        let view_projection = scene
             .map(|scene| scene.camera.projection_view_matrix)
             .unwrap_or(Mat4::IDENTITY);
         if let Err(e) = self
@@ -533,9 +529,5 @@ impl Renderer {
                     .set_entity_transform(info.entity_id, &info.new_transform),
             }
         }
-    }
-
-    pub fn changed_active_scene_handler(&mut self, scene: Arc<Scene>) {
-        self.active_scene = Some(scene);
     }
 }
