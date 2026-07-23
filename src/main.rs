@@ -89,16 +89,16 @@ fn main() {
                         engine.add_multiple_cubes_to_scene(2000);
                     }
                     VirtualKeyCode::W => {
-                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: -1. });
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: 1. });
                     }
                     VirtualKeyCode::A => {
-                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 1., y: 0., z: 0. });
-                    }
-                    VirtualKeyCode::S => {
                         engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: -1., y: 0., z: 0. });
                     }
+                    VirtualKeyCode::S => {
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: -1. });
+                    }
                     VirtualKeyCode::D => {
-                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 0., y: 0., z: 1. });
+                        engine.active_scene_mut().unwrap().camera.translate(Vec3 { x: 1., y: 0., z: 0. });
                     }
                     _ => {}
                 },
