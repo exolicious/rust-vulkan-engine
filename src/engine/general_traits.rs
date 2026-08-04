@@ -6,7 +6,7 @@ pub enum TickAction {
 }
 
 pub trait Entity {
-    fn tick(&mut self) -> Option<TickAction>;
+    fn tick(&mut self, frame_time: f32) -> Option<TickAction>;
     fn transform(&self) -> Transform;
     fn mesh(&self) -> Mesh;
 }

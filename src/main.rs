@@ -106,7 +106,7 @@ fn main() {
         Event::MainEventsCleared => renderer.window().request_redraw(),
         Event::RedrawRequested(_) => {
             let (frame_time_ms, fps) = frame_timer.tick();
-            engine.tick();
+            engine.tick(frame_time_ms);
 
             let Some((image_index, acquire_future)) = renderer.begin_frame() else {
                 return;

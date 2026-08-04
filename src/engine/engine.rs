@@ -12,7 +12,6 @@ use super::scene::Scene;
 pub struct Engine {
     entities: Vec<Box<dyn Entity>>,
     active_scene: Option<Scene>,
-    point_lights: Vec<Box<PointLight>>,
     event_queue: VecDeque<EngineEvent>,
 }
 
@@ -21,7 +20,6 @@ impl Engine {
         Self {
             entities: Vec::new(),
             active_scene: None,
-            point_lights: Vec::new(),
             event_queue: VecDeque::new(),
         }
     }
@@ -42,10 +40,10 @@ impl Engine {
         self.active_scene = Some(scene);
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, frame_time: f32) {
         let mut updates = Vec::new();
         for (entity_index, entity) in self.entities.iter_mut().enumerate() {
-            match entity.tick() {
+            match entity.tick(frame_time) {
                 Some(TickAction::HasMoved(transform)) => {
                     updates.push(EntityUpdateInfo::HasMoved(HasMovedInfo {
                         entity_id: entity_index,

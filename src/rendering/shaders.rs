@@ -22,7 +22,7 @@ mod vertex_shader {
             layout(location = 0) out vec3 v_normal;
 
             void main() {
-                v_normal = mat3(model[gl_InstanceIndex]) * normal;
+                v_normal = mat3(model[gl_InstanceIndex]) * normal; //mat3 because we want to ignore translation and scale for normals
                 gl_Position = view_projection * model[gl_InstanceIndex] * vec4(position, 1.0);
             }",
     }
