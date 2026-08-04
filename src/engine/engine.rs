@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 
+use crate::engine::point_light::PointLight;
 use crate::physics::Transform;
 use crate::rendering::primitives::Cube;
 use crate::rendering::renderer::{EngineEvent, EntityUpdateInfo, HasMovedInfo, Renderer};
@@ -11,6 +12,7 @@ use super::scene::Scene;
 pub struct Engine {
     entities: Vec<Box<dyn Entity>>,
     active_scene: Option<Scene>,
+    point_lights: Vec<Box<PointLight>>,
     event_queue: VecDeque<EngineEvent>,
 }
 
@@ -19,6 +21,7 @@ impl Engine {
         Self {
             entities: Vec::new(),
             active_scene: None,
+            point_lights: Vec::new(),
             event_queue: VecDeque::new(),
         }
     }

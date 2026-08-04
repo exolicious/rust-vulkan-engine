@@ -11,7 +11,9 @@ use vulkano::device::{
     Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
 };
 use vulkano::image::{Image, ImageUsage};
-use vulkano::ordered_passes_renderpass;
+use vulkano::memory::allocator::StandardMemoryAllocator;
+use vulkano::pipeline::graphics::depth_stencil::{DepthState, DepthStencilState};
+use vulkano::{buffer, ordered_passes_renderpass};
 use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::multisample::MultisampleState;
@@ -112,7 +114,7 @@ impl Renderer {
                 )
             })
             .collect();
-        let swapchain_frames = Self::build_swapchain_frames(swapchain_images, render_pass.clone());
+        let swapchain_frames = Self::build_swapchain_frames(swapchain_images, render_pass.clone(), buffer_manager.memory_allocator.clone());
 
         Renderer {
             window,
@@ -134,10 +136,11 @@ impl Renderer {
     fn build_swapchain_frames(
         swapchain_images: Vec<Arc<Image>>,
         render_pass: Arc<RenderPass>,
+        buffer_manager_memory_allocator: Arc<StandardMemoryAllocator>,
     ) -> Vec<Frame> {
         swapchain_images
             .into_iter()
-            .map(|image| Frame::new(image, render_pass.clone()))
+            .map(|image| Frame::new(image, render_pass.clone(), buffer_manager_memory_allocator.clone()))
             .collect()
     }
 
@@ -237,12 +240,18 @@ impl Renderer {
                     load_op: Clear,
                     store_op: Store,
                 },
+                depth_stencil: {
+                    format: Format::D16_UNORM,
+                    samples: 1,
+                    load_op: Clear,
+                    store_op: DontCare,
+                }
             },
             passes: [
-                { color: [color], depth_stencil: {}, input: [] },
+                { color: [color], depth_stencil: {depth_stencil}, input: [] },
                 { color: [color], depth_stencil: {}, input: [] },
             ],
-        )
+        ) 
         .unwrap()
     }
 
@@ -286,6 +295,10 @@ impl Renderer {
                 viewport_state: Some(ViewportState::default()),
                 dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                 rasterization_state: Some(RasterizationState::default()),
+                depth_stencil_state: Some(DepthStencilState {
+                                        depth: Some(DepthState::simple()),
+                                        ..Default::default()
+                                    }),
                 multisample_state: Some(MultisampleState::default()),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
@@ -423,7 +436,7 @@ impl Renderer {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                    clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into()), Some(1.0f32.into())],
                     ..RenderPassBeginInfo::framebuffer(
                         self.swapchain_frames[image_index].framebuffer.clone(),
                     )
@@ -498,7 +511,7 @@ impl Renderer {
             .expect("failed to recreate swapchain");
 
         self.swapchain = new_swapchain;
-        self.swapchain_frames = Self::build_swapchain_frames(new_images, self.render_pass.clone());
+        self.swapchain_frames = Self::build_swapchain_frames(new_images, self.render_pass.clone(), self.buffer_manager.memory_allocator.clone());
         // All frames have finished; dropping the fences releases their
         // references to the old swapchain.
         for frame in &mut self.frames_in_flight {

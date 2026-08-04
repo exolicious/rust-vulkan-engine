@@ -1,3 +1,4 @@
+use glam::Vec3;
 use rand::Rng;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex as VertexMacro;
@@ -10,6 +11,10 @@ use crate::physics::Transform;
 pub struct Vertex {
     #[format(R32G32B32_SFLOAT)]
     pub position: [f32; 3],
+    #[format(R32G32B32_SFLOAT)]
+    pub color: [f32; 3],
+    #[format(R32G32B32_SFLOAT)]
+    pub normal: [f32; 3],
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +37,6 @@ pub struct Cube {
     transform: Transform
 }
 
-// Corner indices: bit pattern x, y, z with 0 = negative and 1 = positive half-extent.
 const CUBE_CORNERS: [[f32; 3]; 8] = [
     [-1., -1., -1.],
     [1., -1., -1.],
@@ -45,18 +49,18 @@ const CUBE_CORNERS: [[f32; 3]; 8] = [
 ];
 
 const CUBE_TRIANGLES: [[usize; 3]; 12] = [
-    [0, 1, 2],
-    [2, 3, 0],
-    [5, 4, 7],
-    [7, 6, 5],
-    [4, 0, 3],
-    [3, 7, 4],
-    [1, 5, 6],
-    [6, 2, 1],
-    [4, 5, 1],
-    [1, 0, 4],
-    [3, 2, 6],
-    [6, 7, 3],
+    [0, 2, 1],
+    [2, 0, 3],
+    [5, 7, 4],
+    [7, 5, 6],
+    [4, 3, 0],
+    [3, 4, 7],
+    [1, 6, 5],
+    [6, 1, 2],
+    [4, 1, 5],
+    [1, 4, 0],
+    [3, 6, 2],
+    [6, 3, 7],
 ];
 
 impl Cube {
@@ -73,9 +77,11 @@ impl Default for Cube {
 
 impl Entity for Cube {
     fn tick(&mut self) -> Option<TickAction> {
-        return None;
-        let amount: f32 = rand::thread_rng().gen_range(-0.02..0.02);
-        self.transform.translation.x += amount;
+        //return None;
+        //let amount: f32 = rand::thread_rng().gen_range(-0.02..0.02);
+        //self.transform.translation.x += amount;
+        self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_y(-0.01);
+        self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_x(-0.01);
         Some(TickAction::HasMoved(self.transform))
     }
 
@@ -86,15 +92,24 @@ impl Entity for Cube {
     fn mesh(&self) -> Mesh {
         let data = CUBE_TRIANGLES
             .iter()
-            .flat_map(|triangle| {
-                triangle.iter().map(|&corner| {
+            .flat_map(|triangle: &[usize; 3]| {
+                let normal = calculate_normal_from_triangle(triangle);
+                triangle.iter().map(move |&corner| {
                     let [x, y, z] = CUBE_CORNERS[corner];
                     Vertex {
                         position: [x, y, z],
+                        color: [1.0, 1.0, 1.0],
+                        normal: normal,
                     }
                 })
             })
             .collect();
         Mesh::new("cube", data)
     }
+}
+
+fn calculate_normal_from_triangle(triangle: &[usize; 3]) -> [f32; 3] {
+    let [a, b, c] = triangle.map(|corner| Vec3::from(CUBE_CORNERS[corner]));
+    // Winding is counter-clockwise seen from outside, so (b - a) x (c - a) points outward.
+    (b - a).cross(c - a).normalize_or_zero().to_array()
 }

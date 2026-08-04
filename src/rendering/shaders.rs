@@ -9,6 +9,7 @@ mod vertex_shader {
             #version 460
 
             layout(location = 0) in vec3 position;
+            layout(location = 1) in vec3 normal;
 
             layout(set = 0, binding = 0) uniform ViewProjection {
                 mat4 view_projection;
@@ -18,7 +19,10 @@ mod vertex_shader {
                 mat4 model[];
             };
 
+            layout(location = 0) out vec3 v_normal;
+
             void main() {
+                v_normal = mat3(model[gl_InstanceIndex]) * normal;
                 gl_Position = view_projection * model[gl_InstanceIndex] * vec4(position, 1.0);
             }",
     }
@@ -31,9 +35,14 @@ mod fragment_shader {
             #version 450
 
             layout(location = 0) out vec4 f_color;
+            layout(location = 0) in vec3 v_normal;
 
             void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                float ambient = 0.5;
+                vec3 light_dir = vec3(0, 1.0, 0.0);
+                float diffuse = max(dot(normalize(v_normal), -light_dir), 0.0);
+
+                f_color = vec4(1.0, 0.0, 0.0, 1.0) * (ambient + diffuse);
             }"
     }
 }
