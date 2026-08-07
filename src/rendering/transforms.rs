@@ -30,7 +30,6 @@ impl Transforms {
         Ok(())
     }
 
-    /// Only call after `check_capacity` succeeded.
     pub fn push(&mut self, model_matrix: Mat4) {
         self.model_matrices.push(model_matrix);
     }
@@ -39,8 +38,6 @@ impl Transforms {
         self.model_matrices[entity_index] = model_matrix;
     }
 
-    /// Writes the model matrices into `buffer`, laid out in `order` (instance
-    /// slots grouped by mesh, see `MeshAccessor::instance_order`).
     pub fn write_into(
         &self,
         buffer: &Subbuffer<[[[f32; 4]; 4]]>,
