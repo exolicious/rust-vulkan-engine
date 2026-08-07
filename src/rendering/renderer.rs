@@ -29,7 +29,8 @@ use vulkano::pipeline::{
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
-    self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo,
+    self, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture,
+    SwapchainCreateInfo, SwapchainPresentInfo,
 };
 use vulkano::sync::{self, GpuFuture};
 use vulkano::{Validated, VulkanError};
@@ -214,15 +215,40 @@ impl Renderer {
             .find(|format| matches!(format, Format::B8G8R8A8_UNORM | Format::R8G8B8A8_UNORM))
             .unwrap_or(surface_formats[0].0);
 
+        // Fifo queues every presented image and shows them one per vblank, so
+        // the image on screen is the one submitted several frames ago, which
+        // mouse look feels as lag that keeps going after the mouse stops.
+        // Mailbox replaces the pending image instead of queueing behind it, so
+        // the newest frame is always the one presented. Fifo is the only mode
+        // guaranteed to exist, so it stays as the fallback.
+        let present_mode = physical_device
+            .surface_present_modes(&surface, SurfaceInfo::default())
+            .map(|mut modes| modes.any(|mode| mode == PresentMode::Mailbox))
+            .unwrap_or(false)
+            .then_some(PresentMode::Mailbox)
+            .unwrap_or(PresentMode::Fifo);
+
+        // Mailbox needs a third image to have something to swap in with,
+        // otherwise it degenerates back into waiting for the vblank.
+        let min_image_count = match present_mode {
+            PresentMode::Mailbox => (caps.min_image_count + 1).max(3),
+            _ => caps.min_image_count + 1,
+        };
+        let min_image_count = match caps.max_image_count {
+            Some(max) => min_image_count.min(max),
+            None => min_image_count,
+        };
+
         Swapchain::new(
             device,
             surface,
             SwapchainCreateInfo {
-                min_image_count: caps.min_image_count + 1,
+                min_image_count,
                 image_format,
                 image_extent: window.inner_size().into(),
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
                 composite_alpha,
+                present_mode,
                 ..Default::default()
             },
         )

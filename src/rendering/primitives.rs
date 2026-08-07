@@ -80,8 +80,8 @@ impl Entity for Cube {
         //return None;
         //let amount: f32 = rand::thread_rng().gen_range(-0.02..0.02);
         //self.transform.translation.x += amount;
-        self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_y(-0.01 / frame_time);
-        self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_x(-0.01 / frame_time);
+        //self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_y(-0.01 * frame_time);
+        self.transform.rotation = self.transform.rotation * glam::Quat::from_rotation_x(-0.001 * frame_time); 
         Some(TickAction::HasMoved(self.transform))
     }
 

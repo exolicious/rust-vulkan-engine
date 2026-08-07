@@ -8,13 +8,8 @@ use winit::event_loop::EventLoop;
 
 use super::renderer::Renderer;
 
-/// The render pass subpass reserved for the gui overlay, drawn on top of the
-/// scene (see `Renderer::build_render_pass`).
 const GUI_SUBPASS_INDEX: u32 = 1;
 
-/// The egui overlay. Owns the egui integration and hides how the gui gets
-/// into the renderer's second subpass; what the UI shows is up to the caller
-/// of `draw`.
 pub struct GuiOverlay {
     gui: Gui,
 }
@@ -43,14 +38,17 @@ impl GuiOverlay {
         Self { gui }
     }
 
-    /// Feeds a window event to egui. Returns true if egui consumed it, in
-    /// which case the engine should ignore it.
     pub fn handle_event(&mut self, event: &WindowEvent) -> bool {
         self.gui.update(event)
     }
 
-    /// Runs `build_ui` for this frame and records the result into a secondary
-    /// command buffer for the renderer's gui subpass.
+    /// True while the pointer is over any egui area. Unlike the `consumed`
+    /// flag from `handle_event`, this is also true for plain hovering, which
+    /// is what the engine needs to decide whether to hide the cursor.
+    pub fn pointer_over_gui(&self) -> bool {
+        self.gui.context().is_pointer_over_area()
+    }
+
     pub fn draw(
         &mut self,
         extent: [u32; 2],
